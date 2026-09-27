@@ -1,6 +1,8 @@
 const $ = (id) => document.getElementById(id);
 let dashboard = null;
 let notes = [];
+let financeAdjustments = [];
+let adjustmentsOpen = false;
 
 const configuredApiBase = String(window.MAPMARKET_CONFIG?.PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
 const labels = { FREE: 'FREE', PRO: 'PRO', BUSINESS: 'BUSINESS', BUSINESS_PLUS: 'BUSINESS PLUS' };
@@ -39,7 +41,11 @@ async function load() {
   setError('');
   $('status').textContent = 'Загрузка...';
   try {
-    [dashboard, notes] = await Promise.all([api('/admin/dashboard'), api('/admin/notes')]);
+    [dashboard, notes, financeAdjustments] = await Promise.all([
+      api('/admin/dashboard'),
+      api('/admin/notes'),
+      api('/admin/finance-adjustments'),
+    ]);
     render();
     $('status').textContent = `Обновлено: ${new Date().toLocaleString('ru-RU')}`;
   } catch (error) {
@@ -53,19 +59,88 @@ function metric(label, value, note) {
   return `<article class="panel metric"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`;
 }
 
-function render() {
+function signedMoney(value) {
+  const amount = Number(value || 0);
+  return `${amount > 0 ? '+' : ''}${amount.toLocaleString('ru-RU')} сум`;
+}
+
+function renderAdjustments() {
+  if (!financeAdjustments.length) return '<div class="empty">Финансовых операций пока нет</div>';
+  return financeAdjustments.map((item) => {
+    const amount = Number(item.amount || 0);
+    return `<article class="adjustment"><div><p>${esc(item.description)}</p><small>${new Date(item.created_at).toLocaleString('ru-RU')}</small></div><span class="adjustment-amount ${amount >= 0 ? 'positive' : 'negative'}">${signedMoney(amount)}</span><button class="danger" type="button" data-adjustment-id="${item.id}">Удалить</button></article>`;
+  }).join('');
+}
+
+function renderMetrics() {
   const summary = dashboard.summary || {};
+  const baseRevenue = Number(summary.projected_monthly_revenue || 0);
+  const adjustmentsTotal = financeAdjustments.reduce((total, item) => total + Number(item.amount || 0), 0);
+  const finalRevenue = baseRevenue + adjustmentsTotal;
+  const adjustmentClass = adjustmentsTotal >= 0 ? 'positive' : 'negative';
   $('metrics').innerHTML = [
-    metric('Доход в месяц', money(summary.projected_monthly_revenue), 'сумма активных тарифов'),
+    `<article class="panel metric metric-revenue"><div class="revenue-main"><div class="revenue-value"><span>Доход в месяц</span><strong>${money(finalRevenue)}</strong><div class="revenue-summary"><small>Тарифы: ${money(baseRevenue)}</small><small>·</small><small class="${adjustmentClass}">Корректировки: ${signedMoney(adjustmentsTotal)}</small></div></div><div class="revenue-controls"><button id="addAdjustment" class="finance-button" type="button" title="Добавить доход или расход" aria-label="Добавить доход или расход">+</button><button id="toggleAdjustments" class="finance-button finance-toggle" type="button" title="Показать операции" aria-expanded="${adjustmentsOpen}">${adjustmentsOpen ? '⌃' : '⌄'}</button></div></div><div class="adjustments" ${adjustmentsOpen ? '' : 'hidden'}>${renderAdjustments()}</div></article>`,
     metric('Покупателей', summary.buyer_users_total, 'аккаунтов Buyer App'),
     metric('Магазинов', summary.shops_total, 'аккаунтов Seller App'),
     metric('Товаров', summary.products_total, 'во всех каталогах'),
     metric('QR использований', summary.qr_scans_total, 'всего транзакций'),
   ].join('');
+  $('addAdjustment').onclick = openAdjustmentDialog;
+  $('toggleAdjustments').onclick = () => {
+    adjustmentsOpen = !adjustmentsOpen;
+    renderMetrics();
+  };
+  document.querySelectorAll('[data-adjustment-id]').forEach((button) => {
+    button.onclick = () => removeAdjustment(button.dataset.adjustmentId);
+  });
+}
+
+function render() {
+  renderMetrics();
   renderBars('plans', dashboard.plans || [], (row) => labels[row.plan] || row.plan, (row) => `${row.shops_count} магаз. · ${money(row.projected_revenue)}`);
   renderBars('cities', dashboard.cities || [], (row) => row.city, (row) => `${row.shops_count} магаз. · ${row.products_count} товаров`);
   renderShops(dashboard.shops || []);
   renderNotes();
+}
+
+function openAdjustmentDialog() {
+  $('adjustmentAmount').value = '';
+  $('adjustmentDescription').value = '';
+  $('adjustmentDialog').showModal();
+  $('adjustmentAmount').focus();
+}
+
+function closeAdjustmentDialog() {
+  $('adjustmentDialog').close();
+}
+
+async function addAdjustment(event) {
+  event.preventDefault();
+  const amount = $('adjustmentAmount').value.trim();
+  const description = $('adjustmentDescription').value.trim();
+  try {
+    const item = await api('/admin/finance-adjustments', {
+      method: 'POST',
+      body: JSON.stringify({ amount, description }),
+    });
+    financeAdjustments.unshift(item);
+    adjustmentsOpen = true;
+    closeAdjustmentDialog();
+    renderMetrics();
+  } catch (error) {
+    setError(`Не удалось добавить операцию: ${error.message}`);
+  }
+}
+
+async function removeAdjustment(id) {
+  if (!window.confirm('Удалить эту финансовую операцию? Итог будет пересчитан.')) return;
+  try {
+    await api(`/admin/finance-adjustments/${id}`, { method: 'DELETE' });
+    financeAdjustments = financeAdjustments.filter((item) => String(item.id) !== String(id));
+    renderMetrics();
+  } catch (error) {
+    setError(`Не удалось удалить операцию: ${error.message}`);
+  }
 }
 
 function renderBars(id, rows, label, value) {
@@ -120,5 +195,8 @@ $('apiUrl').value = configuredApiBase;
 $('load').onclick = load;
 $('refresh').onclick = load;
 $('addNote').onclick = addNote;
+$('adjustmentForm').onsubmit = addAdjustment;
+$('closeAdjustment').onclick = closeAdjustmentDialog;
+$('cancelAdjustment').onclick = closeAdjustmentDialog;
 $('search').oninput = () => { if (dashboard) renderShops(dashboard.shops || []); };
 ['apiUrl', 'adminKey'].forEach((id) => $(id).addEventListener('keydown', (event) => { if (event.key === 'Enter') load(); }));

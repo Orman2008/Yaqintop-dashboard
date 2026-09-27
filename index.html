@@ -10,4 +10,13 @@
   <section class="grid"><article class="panel"><h2>Магазины по тарифам</h2><div id="plans" class="bars"></div></article><article class="panel"><h2>Магазины по городам</h2><div id="cities" class="bars"></div></article></section>
   <section class="panel table-panel"><div class="section-title"><h2>Все магазины</h2><input id="search" placeholder="Поиск магазина, города или тарифа"></div><div class="table-scroll"><table><thead><tr><th>Магазин</th><th>Местоположение</th><th>Тариф</th><th>Товаров</th><th>QR сканов</th><th>Статус</th></tr></thead><tbody id="shops"></tbody></table></div></section>
   <section class="panel notes-panel"><h2>Заметки</h2><div class="note-compose"><textarea id="noteText" maxlength="4000" placeholder="Напишите заметку..."></textarea><button id="addNote" class="primary" type="button">Сохранить</button></div><div id="notes" class="notes"></div></section>
-</main><script src="runtime-config.js"></script><script src="app.js"></script></body></html>
+</main>
+<dialog id="adjustmentDialog" class="adjustment-dialog">
+  <form id="adjustmentForm" method="dialog">
+    <div class="dialog-heading"><div><h2>Добавить операцию</h2><p>Введите сумму со знаком и пояснение.</p></div><button id="closeAdjustment" class="icon-button" type="button" aria-label="Закрыть">×</button></div>
+    <label>Сумма в сумах<input id="adjustmentAmount" inputmode="numeric" maxlength="16" placeholder="-200000 или +1000000" required></label>
+    <label>Описание<input id="adjustmentDescription" maxlength="500" placeholder="Например: за сервер" required></label>
+    <div class="dialog-actions"><button id="cancelAdjustment" type="button">Отмена</button><button class="primary" type="submit">Добавить</button></div>
+  </form>
+</dialog>
+<script src="runtime-config.js"></script><script src="app.js"></script></body></html>
