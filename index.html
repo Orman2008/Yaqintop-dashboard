@@ -4,9 +4,9 @@
 <body>
 <header><div><h1>MapMarket: сводка</h1><p>Магазины, тарифы, товары, города и QR из базы данных</p></div><button id="refresh" class="primary">Обновить</button></header>
 <main>
-  <section class="connection panel"><label>URL backend <input id="apiUrl" value="http://localhost:3000" placeholder="https://api.example.com"></label><label>ADMIN_API_KEY <input id="adminKey" type="password" placeholder="Ключ администратора"></label><button id="load" class="primary">Загрузить данные</button><span id="status" class="muted"></span></section>
+  <section class="connection panel"><label>URL backend <input id="apiUrl" placeholder="https://api.example.com"></label><label>ADMIN_API_KEY <input id="adminKey" type="password" placeholder="Ключ администратора"></label><button id="load" class="primary">Загрузить данные</button><span id="status" class="muted"></span></section>
   <div id="error" class="error"></div>
   <section id="metrics" class="metrics"></section>
   <section class="grid"><article class="panel"><h2>Магазины по тарифам</h2><div id="plans" class="bars"></div></article><article class="panel"><h2>Магазины по городам</h2><div id="cities" class="bars"></div></article></section>
   <section class="panel table-panel"><div class="section-title"><h2>Все магазины</h2><input id="search" placeholder="Поиск магазина, города или тарифа"></div><div class="table-scroll"><table><thead><tr><th>Магазин</th><th>Город</th><th>Тариф</th><th>Товаров</th><th>QR сканов</th><th>Статус</th></tr></thead><tbody id="shops"></tbody></table></div></section>
-</main><script src="app.js"></script></body></html>
+</main><script src="runtime-config.js"></script><script src="app.js"></script></body></html>

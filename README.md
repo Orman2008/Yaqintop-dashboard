@@ -11,8 +11,8 @@
    npm start
    ```
 
-2. Откройте [index.html](index.html) двойным щелчком или через локальный статический сервер.
-3. Введите URL backend (обычно `http://localhost:3000`) и тот же `ADMIN_API_KEY`, нажмите «Загрузить данные».
+2. Укажите production backend в `runtime-config.js` через `PUBLIC_API_BASE_URL`.
+3. Откройте [index.html](index.html), введите `ADMIN_API_KEY` и нажмите «Загрузить данные».
 
 ## Что отображается
 
