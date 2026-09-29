@@ -5,10 +5,13 @@ let financeAdjustments = [];
 let users = [];
 let moderationReports = [];
 let catalogMatches = [];
+let reviews = [];
 let moderationAvailable = true;
 let catalogMatchesAvailable = true;
+let reviewsAvailable = true;
 let adjustmentsOpen = false;
 let dashboardLoading = false;
+let grantShopId = null;
 
 const configuredApiBase = String(window.MAPMARKET_CONFIG?.PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
 const ADMIN_API_TIMEOUT_MS = 15_000;
@@ -29,7 +32,8 @@ function clearDashboardData() {
   users = [];
   moderationReports = [];
   catalogMatches = [];
-  for (const id of ['metrics', 'plans', 'cities', 'categories', 'shops', 'users', 'reports', 'catalogMatches', 'notes']) {
+  reviews = [];
+  for (const id of ['metrics', 'plans', 'cities', 'categories', 'shops', 'users', 'reports', 'catalogMatches', 'reviews', 'notes']) {
     $(id).innerHTML = '';
   }
 }
@@ -100,7 +104,7 @@ async function load() {
   setError('');
   $('status').textContent = 'Загрузка...';
   try {
-    const [core, moderation, catalog] = await Promise.all([
+    const [core, moderation, catalog, reviewResult] = await Promise.all([
       Promise.all([
         api('/admin/dashboard'),
         api('/admin/notes'),
@@ -109,16 +113,22 @@ async function load() {
       ]),
       apiOptional('/admin/moderation/queue?status=open', []),
       apiOptional('/admin/catalog/match-candidates?status=pending', []),
+      apiOptional('/admin/reviews', { reviews: [] }),
     ]);
     [dashboard, notes, financeAdjustments, users] = core;
     moderationReports = moderation.value;
     moderationAvailable = moderation.available;
     catalogMatches = catalog.value;
     catalogMatchesAvailable = catalog.available;
+    reviewsAvailable = reviewResult.available;
+    reviews = Array.isArray(reviewResult.value)
+      ? reviewResult.value
+      : Array.isArray(reviewResult.value?.reviews) ? reviewResult.value.reviews : [];
     render();
     const unavailable = [
       !moderationAvailable && 'модерация',
       !catalogMatchesAvailable && 'сопоставление каталога',
+      !reviewsAvailable && 'отзывы',
     ].filter(Boolean);
     $('status').textContent = `Обновлено: ${new Date().toLocaleString('ru-RU')}${unavailable.length ? ` · Backend не поддерживает: ${unavailable.join(', ')}` : ''}`;
   } catch (error) {
@@ -181,6 +191,7 @@ function render() {
   renderUsers();
   renderReports();
   renderCatalogMatches();
+  renderReviews();
   renderNotes();
 }
 
@@ -247,7 +258,7 @@ function renderShops(rows) {
       const mapLink = hasCoordinates ? `<br><a href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(row.latitude)}&mlon=${encodeURIComponent(row.longitude)}#map=17/${encodeURIComponent(row.latitude)}/${encodeURIComponent(row.longitude)}" target="_blank" rel="noopener">${esc(row.latitude)}, ${esc(row.longitude)} ↗</a>` : '<br><small>Координаты не указаны</small>';
       const activity = row.last_activity_at ? new Date(row.last_activity_at).toLocaleString('ru-RU') : 'Нет активности';
       const subscription = row.plan_expires_at ? `до ${new Date(row.plan_expires_at).toLocaleDateString('ru-RU')}` : 'без даты окончания';
-      return `<tr><td><strong>${esc(row.name)}</strong><br><small>${esc(row.owner_name || '')} · ${esc(row.owner_phone || row.phone || '')}</small></td><td><strong>${esc(row.city || 'Не указан')}</strong><br><small>${esc(row.address || '')}</small>${mapLink}</td><td><span class="badge">${labels[row.plan] || esc(row.plan)}</span><br><small>${subscription}</small></td><td>${row.product_count}</td><td>${row.qr_scans_count}</td><td><small>Просмотры: ${row.views_count}<br>Клики: ${row.clicks_count}<br>Звонки: ${row.calls_count}<br>Маршруты: ${row.route_clicks_count}<br>Последняя: ${activity}</small></td><td><span class="${row.verification_status === 'verified' ? 'status-ok' : row.verification_status === 'rejected' ? 'status-bad' : ''}">${esc(row.verification_status || 'unverified')}</span><br><small>${esc(row.moderation_status || 'active')}</small></td><td><div class="actions"><button class="action approve" data-shop-approve="${row.id}">Проверен</button><button class="action warn" data-shop-reject="${row.id}">Отклонить</button><button class="danger" data-shop-block="${row.id}">${row.moderation_status === 'blocked' ? 'Разблокировать' : 'Блокировать'}</button></div></td></tr>`;
+      return `<tr><td><strong>${esc(row.name)}</strong><br><small>${esc(row.owner_name || '')} · ${esc(row.owner_phone || row.phone || '')}</small></td><td><strong>${esc(row.city || 'Не указан')}</strong><br><small>${esc(row.address || '')}</small>${mapLink}</td><td><button class="badge plan-action" type="button" data-grant-plan="${row.id}" title="Выдать бесплатный тариф на месяц">${labels[row.plan] || esc(row.plan)}</button><br><small>${subscription}</small></td><td>${row.product_count}</td><td>${row.qr_scans_count}</td><td><small>Просмотры: ${row.views_count}<br>Клики: ${row.clicks_count}<br>Звонки: ${row.calls_count}<br>Маршруты: ${row.route_clicks_count}<br>Последняя: ${activity}</small></td><td><span class="${row.verification_status === 'verified' ? 'status-ok' : row.verification_status === 'rejected' ? 'status-bad' : ''}">${esc(row.verification_status || 'unverified')}</span><br><small>${esc(row.moderation_status || 'active')}</small></td><td><div class="actions"><button class="action approve" data-shop-approve="${row.id}">Проверен</button><button class="action warn" data-shop-reject="${row.id}">Отклонить</button><button class="danger" data-shop-block="${row.id}">${row.moderation_status === 'blocked' ? 'Разблокировать' : 'Блокировать'}</button></div></td></tr>`;
     }).join('')
     : '<tr><td colspan="8" class="empty">Магазины не найдены</td></tr>';
   document.querySelectorAll('[data-shop-approve]').forEach((button) => { button.onclick = () => moderateShop(button.dataset.shopApprove, 'active', 'verified'); });
@@ -256,6 +267,62 @@ function renderShops(rows) {
     const shop = rows.find((item) => String(item.id) === String(button.dataset.shopBlock));
     button.onclick = () => moderateShop(button.dataset.shopBlock, shop?.moderation_status === 'blocked' ? 'active' : 'blocked', shop?.verification_status || 'unverified');
   });
+  document.querySelectorAll('[data-grant-plan]').forEach((button) => {
+    button.onclick = () => openFreeSubscriptionDialog(button.dataset.grantPlan);
+  });
+}
+
+function renderReviews() {
+  $('reviews').innerHTML = !reviewsAvailable
+    ? '<tr><td colspan="6" class="empty">Раздел появится после обновления backend.</td></tr>'
+    : reviews.length
+    ? reviews.map((review) => `<tr><td><strong>${esc(review.shop_name)}</strong><br><small>#${esc(review.shop_id)}</small></td><td>${esc(review.author_name || 'Покупатель')}<br><small>#${esc(review.author_id)}</small></td><td>${esc(review.product_name)}<br><small>#${esc(review.product_id)}</small></td><td><span class="review-rating">${'★'.repeat(Math.max(0, Math.min(5, Number(review.rating) || 0)))}${'☆'.repeat(5 - Math.max(0, Math.min(5, Number(review.rating) || 0)))}</span></td><td class="review-text">${esc(review.text || 'Без текста')}</td><td>${new Date(review.updated_at || review.created_at).toLocaleString('ru-RU')}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="empty">Отзывов пока нет</td></tr>';
+}
+
+function openFreeSubscriptionDialog(id) {
+  const shop = dashboard?.shops?.find((item) => String(item.id) === String(id));
+  if (!shop) return;
+  grantShopId = String(id);
+  $('grantShopName').textContent = `${shop.name} · тариф ${labels[shop.plan] || shop.plan || 'FREE'}`;
+  $('grantPlan').value = 'PRO';
+  $('grantCode').value = '';
+  $('freeSubscriptionDialog').showModal();
+  $('grantPlan').focus();
+}
+
+function closeFreeSubscriptionDialog() {
+  $('freeSubscriptionDialog').close();
+  $('grantCode').value = '';
+  grantShopId = null;
+}
+
+async function grantFreeSubscription(event) {
+  event.preventDefault();
+  if (!grantShopId) return;
+  const submit = $('grantSubscriptionSubmit');
+  const plan = $('grantPlan').value;
+  const activationCode = $('grantCode').value;
+  submit.disabled = true;
+  setError('');
+  try {
+    const result = await api(`/admin/shops/${grantShopId}/free-subscription`, {
+      method: 'POST',
+      body: JSON.stringify({ plan, activation_code: activationCode }),
+    });
+    const shopName = result.shop?.name || $('grantShopName').textContent;
+    const expiresAt = result.shop?.plan_expires_at
+      ? new Date(result.shop.plan_expires_at).toLocaleDateString('ru-RU')
+      : '';
+    closeFreeSubscriptionDialog();
+    await load();
+    if (!dashboard) return;
+    $('status').textContent = `${labels[plan] || plan} выдан магазину «${shopName}» бесплатно${expiresAt ? ` до ${expiresAt}` : ''}.`;
+  } catch (error) {
+    setError(`Не удалось выдать тариф: ${error.message}`);
+  } finally {
+    submit.disabled = false;
+  }
 }
 
 async function moderateShop(id, status, verificationStatus) {
@@ -395,6 +462,9 @@ $('addNote').onclick = addNote;
 $('adjustmentForm').onsubmit = addAdjustment;
 $('closeAdjustment').onclick = closeAdjustmentDialog;
 $('cancelAdjustment').onclick = closeAdjustmentDialog;
+$('freeSubscriptionForm').onsubmit = grantFreeSubscription;
+$('closeFreeSubscription').onclick = closeFreeSubscriptionDialog;
+$('cancelFreeSubscription').onclick = closeFreeSubscriptionDialog;
 $('search').oninput = () => { if (dashboard) renderShops(dashboard.shops || []); };
 ['planFilter', 'statusFilter'].forEach((id) => $(id).onchange = () => { if (dashboard) renderShops(dashboard.shops || []); });
 ['apiUrl', 'adminKey'].forEach((id) => $(id).addEventListener('keydown', (event) => { if (event.key === 'Enter') load(); }));

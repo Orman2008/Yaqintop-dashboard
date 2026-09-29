@@ -14,14 +14,21 @@ const createDashboard = (responses) => {
     'apiUrl', 'adminKey', 'load', 'refresh', 'addNote', 'adjustmentForm',
     'closeAdjustment', 'cancelAdjustment', 'search', 'planFilter', 'statusFilter',
     'status', 'error', 'metrics', 'plans', 'cities', 'categories', 'shops',
-    'users', 'reports', 'catalogMatches', 'notes', 'adjustmentAmount',
+    'users', 'reports', 'catalogMatches', 'reviews', 'notes', 'adjustmentAmount',
     'adjustmentDescription', 'adjustmentDialog', 'noteText',
+    'freeSubscriptionForm', 'freeSubscriptionDialog', 'grantShopName',
+    'grantPlan', 'grantCode', 'grantSubscriptionSubmit', 'closeFreeSubscription',
+    'cancelFreeSubscription',
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, {
     value: '',
     textContent: '',
     innerHTML: '',
+    disabled: false,
     onclick: null,
+    showModal() {},
+    close() {},
+    focus() {},
     addEventListener() {},
   }]));
   const context = {
@@ -40,15 +47,12 @@ const createDashboard = (responses) => {
       prompt: () => null,
     },
     document: {
-      getElementById: (id) => elements[id] || (elements[id] = {
-        value: '',
-        textContent: '',
-        innerHTML: '',
-        onclick: null,
-        addEventListener() {},
+    getElementById: (id) => elements[id] || (elements[id] = {
+        value: '', textContent: '', innerHTML: '', disabled: false,
+        onclick: null, showModal() {}, close() {}, focus() {}, addEventListener() {},
       }),
       querySelectorAll: () => [],
-      createElement: () => ({ set textContent(value) { this._text = value; }, get innerHTML() { return this._text || ''; } }),
+      createElement: () => ({ set textContent(value) { this._text = String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;'); }, get innerHTML() { return this._text || ''; } }),
     },
     fetch: async (url, options = {}) => {
       const path = new URL(url).pathname + new URL(url).search;
@@ -62,7 +66,7 @@ const createDashboard = (responses) => {
     },
   };
   vm.createContext(context);
-  vm.runInContext(`${source}\nwindow.testLoad = load; window.testApiOptional = apiOptional; window.testConnection = connection; window.testApi = api;`, context);
+  vm.runInContext(`${source}\nwindow.testLoad = load; window.testApiOptional = apiOptional; window.testConnection = connection; window.testApi = api; window.testRenderReviews = renderReviews; window.testOpenGrant = openFreeSubscriptionDialog; window.testGrantSubscription = grantFreeSubscription;`, context);
   elements.adminKey.value = 'test-admin-key';
   vm.runInNewContext('window.testResolveReport = resolveReport; window.testModerateShop = moderateShop; window.testSetUserBlocked = setUserBlocked;', context);
   return { context, elements, responses, fetchCalls };
@@ -125,6 +129,53 @@ test('admin key cannot be sent to a remote HTTP backend', () => {
 
   elements.apiUrl.value = 'http://localhost:3000';
   assert.equal(context.window.testConnection().base, 'http://localhost:3000');
+});
+
+test('backend URL input is masked just like the administrator key', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.match(html, /id="apiUrl" type="password"/);
+  assert.match(html, /id="adminKey" type="password"/);
+});
+
+test('reviews render store, author, product, rating, text and date', async () => {
+  const { context, elements } = createDashboard({
+    '/admin/dashboard': { status: 200, body: { summary: {}, plans: [], cities: [], product_categories: [], shops: [] } },
+    '/admin/notes': { status: 200, body: [] },
+    '/admin/finance-adjustments': { status: 200, body: [] },
+    '/admin/users': { status: 200, body: [] },
+    '/admin/reviews': { status: 200, body: { reviews: [{ id: 4, shop_id: 2, shop_name: 'I tech', author_id: 8, author_name: 'Ali', product_id: 3, product_name: 'Phone', rating: 5, text: '<great>', created_at: '2026-09-30T10:00:00Z' }] } },
+  });
+  await context.window.testLoad();
+  assert.match(elements.reviews.innerHTML, /I tech/);
+  assert.match(elements.reviews.innerHTML, /Ali/);
+  assert.match(elements.reviews.innerHTML, /Phone/);
+  assert.match(elements.reviews.innerHTML, /&lt;great&gt;/);
+  assert.match(elements.reviews.innerHTML, /★★★★★/);
+});
+
+test('shop tariff control opens the one-month grant panel and posts selected plan/code', async () => {
+  const shop = { id: 17, name: 'I tech', city: 'Tashkent', plan: 'FREE', product_count: 2, qr_scans_count: 0, views_count: 0, clicks_count: 0, calls_count: 0, route_clicks_count: 0 };
+  const { context, elements, fetchCalls } = createDashboard({
+    '/admin/dashboard': { status: 200, body: { summary: {}, plans: [], cities: [], product_categories: [], shops: [shop] } },
+    '/admin/notes': { status: 200, body: [] },
+    '/admin/finance-adjustments': { status: 200, body: [] },
+    '/admin/users': { status: 200, body: [] },
+    '/admin/reviews': { status: 200, body: { reviews: [] } },
+    '/admin/shops/17/free-subscription': { status: 200, body: { success: true, shop: { ...shop, name: 'I tech', plan_expires_at: '2026-10-30T00:00:00Z' } } },
+  });
+  await context.window.testLoad();
+  assert.match(elements.shops.innerHTML, /data-grant-plan="17"/);
+  context.window.testOpenGrant('17');
+  assert.match(elements.grantShopName.textContent, /I tech/);
+  elements.grantPlan.value = 'BUSINESS_PLUS';
+  elements.grantCode.value = 'test-grant-code-1234';
+  await context.window.testGrantSubscription({ preventDefault() {} });
+
+  const grantRequest = fetchCalls.find((call) => new URL(call.url).pathname === '/admin/shops/17/free-subscription');
+  assert.ok(grantRequest);
+  assert.equal(grantRequest.options.method, 'POST');
+  assert.deepEqual(JSON.parse(grantRequest.options.body), { plan: 'BUSINESS_PLUS', activation_code: 'test-grant-code-1234' });
+  assert.match(elements.status.textContent, /выдан магазину/);
 });
 
 test('Admin API request timeout aborts the request with a retryable message', async () => {
