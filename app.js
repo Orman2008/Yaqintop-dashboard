@@ -6,6 +6,9 @@ let users = [];
 let moderationReports = [];
 let catalogMatches = [];
 let reviews = [];
+let reviewTotal = 0;
+let reviewsHaveMore = false;
+let reviewLoadingMore = false;
 let moderationAvailable = true;
 let catalogMatchesAvailable = true;
 let reviewsAvailable = true;
@@ -33,9 +36,13 @@ function clearDashboardData() {
   moderationReports = [];
   catalogMatches = [];
   reviews = [];
+  reviewTotal = 0;
+  reviewsHaveMore = false;
   for (const id of ['metrics', 'plans', 'cities', 'categories', 'shops', 'users', 'reports', 'catalogMatches', 'reviews', 'notes']) {
     $(id).innerHTML = '';
   }
+  $('reviewStatus').textContent = '';
+  $('loadMoreReviews').hidden = true;
 }
 
 function connection() {
@@ -113,7 +120,7 @@ async function load() {
       ]),
       apiOptional('/admin/moderation/queue?status=open', []),
       apiOptional('/admin/catalog/match-candidates?status=pending', []),
-      apiOptional('/admin/reviews', { reviews: [] }),
+      apiOptional('/admin/reviews?limit=100&offset=0', { reviews: [], total_count: 0, has_more: false }),
     ]);
     [dashboard, notes, financeAdjustments, users] = core;
     moderationReports = moderation.value;
@@ -124,6 +131,8 @@ async function load() {
     reviews = Array.isArray(reviewResult.value)
       ? reviewResult.value
       : Array.isArray(reviewResult.value?.reviews) ? reviewResult.value.reviews : [];
+    reviewTotal = Number(reviewResult.value?.total_count ?? reviews.length) || 0;
+    reviewsHaveMore = reviewResult.value?.has_more === true;
     render();
     const unavailable = [
       !moderationAvailable && 'модерация',
@@ -273,11 +282,35 @@ function renderShops(rows) {
 }
 
 function renderReviews() {
+  $('reviewStatus').textContent = reviewsAvailable
+    ? `Показано ${reviews.length} из ${reviewTotal} отзывов из базы данных`
+    : 'Обновите backend, чтобы открыть отзывы.';
+  $('loadMoreReviews').hidden = !reviewsAvailable || !reviewsHaveMore;
+  $('loadMoreReviews').disabled = reviewLoadingMore;
+  $('loadMoreReviews').textContent = reviewLoadingMore ? 'Загрузка…' : 'Показать ещё';
   $('reviews').innerHTML = !reviewsAvailable
     ? '<tr><td colspan="6" class="empty">Раздел появится после обновления backend.</td></tr>'
     : reviews.length
     ? reviews.map((review) => `<tr><td><strong>${esc(review.shop_name)}</strong><br><small>#${esc(review.shop_id)}</small></td><td>${esc(review.author_name || 'Покупатель')}<br><small>#${esc(review.author_id)}</small></td><td>${esc(review.product_name)}<br><small>#${esc(review.product_id)}</small></td><td><span class="review-rating">${'★'.repeat(Math.max(0, Math.min(5, Number(review.rating) || 0)))}${'☆'.repeat(5 - Math.max(0, Math.min(5, Number(review.rating) || 0)))}</span></td><td class="review-text">${esc(review.text || 'Без текста')}</td><td>${new Date(review.updated_at || review.created_at).toLocaleString('ru-RU')}</td></tr>`).join('')
     : '<tr><td colspan="6" class="empty">Отзывов пока нет</td></tr>';
+}
+
+async function loadMoreReviews() {
+  if (!reviewsAvailable || !reviewsHaveMore || reviewLoadingMore) return;
+  reviewLoadingMore = true;
+  renderReviews();
+  try {
+    const page = await api(`/admin/reviews?limit=100&offset=${reviews.length}`);
+    reviews = reviews.concat(Array.isArray(page.reviews) ? page.reviews : []);
+    reviewTotal = Number(page.total_count ?? reviewTotal) || 0;
+    reviewsHaveMore = page.has_more === true;
+    renderReviews();
+  } catch (error) {
+    setError(`Не удалось загрузить следующие отзывы: ${error.message}`);
+  } finally {
+    reviewLoadingMore = false;
+    renderReviews();
+  }
 }
 
 function openFreeSubscriptionDialog(id) {
@@ -465,6 +498,7 @@ $('cancelAdjustment').onclick = closeAdjustmentDialog;
 $('freeSubscriptionForm').onsubmit = grantFreeSubscription;
 $('closeFreeSubscription').onclick = closeFreeSubscriptionDialog;
 $('cancelFreeSubscription').onclick = closeFreeSubscriptionDialog;
+$('loadMoreReviews').onclick = loadMoreReviews;
 $('search').oninput = () => { if (dashboard) renderShops(dashboard.shops || []); };
 ['planFilter', 'statusFilter'].forEach((id) => $(id).onchange = () => { if (dashboard) renderShops(dashboard.shops || []); });
 ['apiUrl', 'adminKey'].forEach((id) => $(id).addEventListener('keydown', (event) => { if (event.key === 'Enter') load(); }));

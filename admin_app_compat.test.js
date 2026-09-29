@@ -18,7 +18,7 @@ const createDashboard = (responses) => {
     'adjustmentDescription', 'adjustmentDialog', 'noteText',
     'freeSubscriptionForm', 'freeSubscriptionDialog', 'grantShopName',
     'grantPlan', 'grantCode', 'grantSubscriptionSubmit', 'closeFreeSubscription',
-    'cancelFreeSubscription',
+    'cancelFreeSubscription', 'reviewStatus', 'loadMoreReviews',
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, {
     value: '',
@@ -66,7 +66,7 @@ const createDashboard = (responses) => {
     },
   };
   vm.createContext(context);
-  vm.runInContext(`${source}\nwindow.testLoad = load; window.testApiOptional = apiOptional; window.testConnection = connection; window.testApi = api; window.testRenderReviews = renderReviews; window.testOpenGrant = openFreeSubscriptionDialog; window.testGrantSubscription = grantFreeSubscription;`, context);
+  vm.runInContext(`${source}\nwindow.testLoad = load; window.testApiOptional = apiOptional; window.testConnection = connection; window.testApi = api; window.testRenderReviews = renderReviews; window.testLoadMoreReviews = loadMoreReviews; window.testOpenGrant = openFreeSubscriptionDialog; window.testGrantSubscription = grantFreeSubscription;`, context);
   elements.adminKey.value = 'test-admin-key';
   vm.runInNewContext('window.testResolveReport = resolveReport; window.testModerateShop = moderateShop; window.testSetUserBlocked = setUserBlocked;', context);
   return { context, elements, responses, fetchCalls };
@@ -143,7 +143,7 @@ test('reviews render store, author, product, rating, text and date', async () =>
     '/admin/notes': { status: 200, body: [] },
     '/admin/finance-adjustments': { status: 200, body: [] },
     '/admin/users': { status: 200, body: [] },
-    '/admin/reviews': { status: 200, body: { reviews: [{ id: 4, shop_id: 2, shop_name: 'I tech', author_id: 8, author_name: 'Ali', product_id: 3, product_name: 'Phone', rating: 5, text: '<great>', created_at: '2026-09-30T10:00:00Z' }] } },
+    '/admin/reviews?limit=100&offset=0': { status: 200, body: { reviews: [{ id: 4, shop_id: 2, shop_name: 'I tech', author_id: 8, author_name: 'Ali', product_id: 3, product_name: 'Phone', rating: 5, text: '<great>', created_at: '2026-09-30T10:00:00Z' }], total_count: 1, has_more: false } },
   });
   await context.window.testLoad();
   assert.match(elements.reviews.innerHTML, /I tech/);
@@ -151,6 +151,33 @@ test('reviews render store, author, product, rating, text and date', async () =>
   assert.match(elements.reviews.innerHTML, /Phone/);
   assert.match(elements.reviews.innerHTML, /&lt;great&gt;/);
   assert.match(elements.reviews.innerHTML, /★★★★★/);
+  assert.match(elements.reviewStatus.textContent, /1 из 1/);
+});
+
+test('reviews can be paged until every database record is displayed', async () => {
+  const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: 200 - index, shop_name: 'Shop', author_name: 'Buyer', product_name: `Product ${index}`, rating: 4, text: 'review' }));
+  const { context, elements, fetchCalls } = createDashboard({
+    '/admin/dashboard': { status: 200, body: { summary: {}, plans: [], cities: [], product_categories: [], shops: [] } },
+    '/admin/notes': { status: 200, body: [] },
+    '/admin/finance-adjustments': { status: 200, body: [] },
+    '/admin/users': { status: 200, body: [] },
+    '/admin/reviews?limit=100&offset=0': { status: 200, body: { reviews: firstPage, total_count: 101, has_more: true } },
+    '/admin/reviews?limit=100&offset=100': { status: 200, body: { reviews: [{ id: 1, shop_name: 'Shop', author_name: 'Buyer', product_name: 'Last product', rating: 5, text: 'last review' }], total_count: 101, has_more: false } },
+  });
+  await context.window.testLoad();
+  assert.equal(elements.loadMoreReviews.hidden, false);
+  await context.window.testLoadMoreReviews();
+  assert.match(elements.reviews.innerHTML, /Last product/);
+  assert.match(elements.reviewStatus.textContent, /101 из 101/);
+  assert.equal(elements.loadMoreReviews.hidden, true);
+  assert.ok(fetchCalls.some((call) => new URL(call.url).search === '?limit=100&offset=100'));
+});
+
+test('the admin dashboard contains only one all-shops table', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.equal((html.match(/id="shops"/g) || []).length, 1);
+  assert.equal((html.match(/id="search"/g) || []).length, 1);
+  assert.equal((html.match(/id="planFilter"/g) || []).length, 1);
 });
 
 test('shop tariff control opens the one-month grant panel and posts selected plan/code', async () => {
