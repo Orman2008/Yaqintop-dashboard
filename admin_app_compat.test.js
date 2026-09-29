@@ -180,6 +180,15 @@ test('the admin dashboard contains only one all-shops table', () => {
   assert.equal((html.match(/id="planFilter"/g) || []).length, 1);
 });
 
+test('the subscription dialog visibly offers all tiers and requires explicit confirmation', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  for (const plan of ['PRO', 'BUSINESS', 'BUSINESS_PLUS']) {
+    assert.match(html, new RegExp(`data-grant-choice="${plan}"`));
+  }
+  assert.match(html, /id="grantCode" type="password"/);
+  assert.match(html, />Подтвердить<\/button>/);
+});
+
 test('shop tariff control opens the one-month grant panel and posts selected plan/code', async () => {
   const shop = { id: 17, name: 'I tech', city: 'Tashkent', plan: 'FREE', product_count: 2, qr_scans_count: 0, views_count: 0, clicks_count: 0, calls_count: 0, route_clicks_count: 0 };
   const { context, elements, fetchCalls } = createDashboard({

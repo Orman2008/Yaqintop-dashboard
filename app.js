@@ -18,7 +18,7 @@ let grantShopId = null;
 
 const configuredApiBase = String(window.MAPMARKET_CONFIG?.PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
 const ADMIN_API_TIMEOUT_MS = 15_000;
-const labels = { FREE: 'FREE', PRO: 'PRO', BUSINESS: 'BUSINESS', BUSINESS_PLUS: 'BUSINESS PRO' };
+const labels = { FREE: 'FREE', PRO: 'PRO', BUSINESS: 'BUSINESS', BUSINESS_PLUS: 'BUSINESS PLUS' };
 const money = (value) => `${Number(value || 0).toLocaleString('ru-RU')} сум`;
 const esc = (value) => {
   const div = document.createElement('div');
@@ -284,12 +284,12 @@ function renderShops(rows) {
 function renderReviews() {
   $('reviewStatus').textContent = reviewsAvailable
     ? `Показано ${reviews.length} из ${reviewTotal} отзывов из базы данных`
-    : 'Обновите backend, чтобы открыть отзывы.';
+    : 'Отзывы недоступны: обновите backend, чтобы подключить API отзывов.';
   $('loadMoreReviews').hidden = !reviewsAvailable || !reviewsHaveMore;
   $('loadMoreReviews').disabled = reviewLoadingMore;
   $('loadMoreReviews').textContent = reviewLoadingMore ? 'Загрузка…' : 'Показать ещё';
   $('reviews').innerHTML = !reviewsAvailable
-    ? '<tr><td colspan="6" class="empty">Раздел появится после обновления backend.</td></tr>'
+    ? '<tr><td colspan="6" class="empty">Backend пока отвечает 404 на API отзывов. Опубликуйте обновление backend.</td></tr>'
     : reviews.length
     ? reviews.map((review) => `<tr><td><strong>${esc(review.shop_name)}</strong><br><small>#${esc(review.shop_id)}</small></td><td>${esc(review.author_name || 'Покупатель')}<br><small>#${esc(review.author_id)}</small></td><td>${esc(review.product_name)}<br><small>#${esc(review.product_id)}</small></td><td><span class="review-rating">${'★'.repeat(Math.max(0, Math.min(5, Number(review.rating) || 0)))}${'☆'.repeat(5 - Math.max(0, Math.min(5, Number(review.rating) || 0)))}</span></td><td class="review-text">${esc(review.text || 'Без текста')}</td><td>${new Date(review.updated_at || review.created_at).toLocaleString('ru-RU')}</td></tr>`).join('')
     : '<tr><td colspan="6" class="empty">Отзывов пока нет</td></tr>';
@@ -318,10 +318,19 @@ function openFreeSubscriptionDialog(id) {
   if (!shop) return;
   grantShopId = String(id);
   $('grantShopName').textContent = `${shop.name} · тариф ${labels[shop.plan] || shop.plan || 'FREE'}`;
-  $('grantPlan').value = 'PRO';
+  selectGrantPlan('');
   $('grantCode').value = '';
   $('freeSubscriptionDialog').showModal();
-  $('grantPlan').focus();
+}
+
+function selectGrantPlan(plan) {
+  const allowed = ['PRO', 'BUSINESS', 'BUSINESS_PLUS'];
+  $('grantPlan').value = allowed.includes(plan) ? plan : '';
+  document.querySelectorAll('[data-grant-choice]').forEach((button) => {
+    const selected = button.dataset.grantChoice === $('grantPlan').value;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  });
 }
 
 function closeFreeSubscriptionDialog() {
@@ -336,6 +345,10 @@ async function grantFreeSubscription(event) {
   const submit = $('grantSubscriptionSubmit');
   const plan = $('grantPlan').value;
   const activationCode = $('grantCode').value;
+  if (!plan) {
+    setError('Сначала выберите PRO, BUSINESS или BUSINESS PLUS.');
+    return;
+  }
   submit.disabled = true;
   setError('');
   try {
@@ -352,7 +365,10 @@ async function grantFreeSubscription(event) {
     if (!dashboard) return;
     $('status').textContent = `${labels[plan] || plan} выдан магазину «${shopName}» бесплатно${expiresAt ? ` до ${expiresAt}` : ''}.`;
   } catch (error) {
-    setError(`Не удалось выдать тариф: ${error.message}`);
+    const message = error.status === 404
+      ? 'Production backend ещё не обновлён: опубликуйте серверный маршрут выдачи тарифа и повторите попытку.'
+      : error.message;
+    setError(`Не удалось выдать тариф: ${message}`);
   } finally {
     submit.disabled = false;
   }
@@ -499,6 +515,9 @@ $('freeSubscriptionForm').onsubmit = grantFreeSubscription;
 $('closeFreeSubscription').onclick = closeFreeSubscriptionDialog;
 $('cancelFreeSubscription').onclick = closeFreeSubscriptionDialog;
 $('loadMoreReviews').onclick = loadMoreReviews;
+document.querySelectorAll('[data-grant-choice]').forEach((button) => {
+  button.onclick = () => selectGrantPlan(button.dataset.grantChoice);
+});
 $('search').oninput = () => { if (dashboard) renderShops(dashboard.shops || []); };
 ['planFilter', 'statusFilter'].forEach((id) => $(id).onchange = () => { if (dashboard) renderShops(dashboard.shops || []); });
 ['apiUrl', 'adminKey'].forEach((id) => $(id).addEventListener('keydown', (event) => { if (event.key === 'Enter') load(); }));
