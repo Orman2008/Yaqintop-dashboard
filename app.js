@@ -5,12 +5,14 @@ let financeAdjustments = [];
 let users = [];
 let moderationReports = [];
 let catalogMatches = [];
+let globalCatalog = [];
 let reviews = [];
 let reviewTotal = 0;
 let reviewsHaveMore = false;
 let reviewLoadingMore = false;
 let moderationAvailable = true;
 let catalogMatchesAvailable = true;
+let globalCatalogAvailable = true;
 let reviewsAvailable = true;
 let adjustmentsOpen = false;
 let dashboardLoading = false;
@@ -20,6 +22,11 @@ const configuredApiBase = String(window.MAPMARKET_CONFIG?.PUBLIC_API_BASE_URL ||
 const ADMIN_API_TIMEOUT_MS = 15_000;
 const labels = { FREE: 'FREE', PRO: 'PRO', BUSINESS: 'BUSINESS', BUSINESS_PLUS: 'BUSINESS PLUS' };
 const money = (value) => `${Number(value || 0).toLocaleString('ru-RU')} сум`;
+const mediaUrl = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try { return new URL(raw, `${connection().base}/`).toString(); } catch { return ''; }
+};
 const esc = (value) => {
   const div = document.createElement('div');
   div.textContent = String(value ?? '');
@@ -35,10 +42,11 @@ function clearDashboardData() {
   users = [];
   moderationReports = [];
   catalogMatches = [];
+  globalCatalog = [];
   reviews = [];
   reviewTotal = 0;
   reviewsHaveMore = false;
-  for (const id of ['metrics', 'plans', 'cities', 'categories', 'shops', 'users', 'reports', 'catalogMatches', 'reviews', 'notes']) {
+  for (const id of ['metrics', 'plans', 'cities', 'categories', 'shops', 'users', 'reports', 'globalCatalog', 'catalogMatches', 'reviews', 'notes']) {
     $(id).innerHTML = '';
   }
   $('reviewStatus').textContent = '';
@@ -64,11 +72,12 @@ async function api(path, options = {}) {
   const timeout = setTimeout(() => controller.abort(), ADMIN_API_TIMEOUT_MS);
   let response;
   try {
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     response = await fetch(`${base}${path}`, {
       ...options,
       signal: controller.signal,
       headers: {
-        'content-type': 'application/json',
+        ...(!isFormData ? { 'content-type': 'application/json' } : {}),
         'x-admin-key': key,
         ...(options.headers || {}),
       },
@@ -111,7 +120,7 @@ async function load() {
   setError('');
   $('status').textContent = 'Загрузка...';
   try {
-    const [core, moderation, catalog, reviewResult] = await Promise.all([
+    const [core, moderation, catalog, globalCatalogResult, reviewResult] = await Promise.all([
       Promise.all([
         api('/admin/dashboard'),
         api('/admin/notes'),
@@ -120,6 +129,7 @@ async function load() {
       ]),
       apiOptional('/admin/moderation/queue?status=open', []),
       apiOptional('/admin/catalog/match-candidates?status=pending', []),
+      apiOptional('/admin/catalog/products?status=active&limit=200', { items: [] }),
       apiOptional('/admin/reviews?limit=100&offset=0', { reviews: [], total_count: 0, has_more: false }),
     ]);
     [dashboard, notes, financeAdjustments, users] = core;
@@ -127,6 +137,8 @@ async function load() {
     moderationAvailable = moderation.available;
     catalogMatches = catalog.value;
     catalogMatchesAvailable = catalog.available;
+    globalCatalogAvailable = globalCatalogResult.available;
+    globalCatalog = Array.isArray(globalCatalogResult.value?.items) ? globalCatalogResult.value.items : [];
     reviewsAvailable = reviewResult.available;
     reviews = Array.isArray(reviewResult.value)
       ? reviewResult.value
@@ -137,6 +149,7 @@ async function load() {
     const unavailable = [
       !moderationAvailable && 'модерация',
       !catalogMatchesAvailable && 'сопоставление каталога',
+      !globalCatalogAvailable && 'глобальный каталог',
       !reviewsAvailable && 'отзывы',
     ].filter(Boolean);
     $('status').textContent = `Обновлено: ${new Date().toLocaleString('ru-RU')}${unavailable.length ? ` · Backend не поддерживает: ${unavailable.join(', ')}` : ''}`;
@@ -199,6 +212,7 @@ function render() {
   renderShops(dashboard.shops || []);
   renderUsers();
   renderReports();
+  renderGlobalCatalog();
   renderCatalogMatches();
   renderReviews();
   renderNotes();
@@ -431,6 +445,126 @@ function renderReports() {
   document.querySelectorAll('[data-report-restrict]').forEach((button) => { button.onclick = () => resolveReport(button.dataset.reportRestrict, 'restrict_account'); });
 }
 
+function renderGlobalCatalog() {
+  const target = $('globalCatalog');
+  if (!target) return;
+  const query = ($('globalCatalogSearch')?.value || '').trim().toLowerCase();
+  const status = $('globalCatalogStatusFilter')?.value || 'active';
+  const rows = globalCatalog.filter((item) => {
+    const haystack = `${item.canonical_name || ''} ${item.brand || ''} ${item.gtin || ''} ${item.category || ''}`.toLowerCase();
+    return (!query || haystack.includes(query)) && (status === 'all' || item.status === status);
+  });
+  $('globalCatalogStatus').textContent = !globalCatalogAvailable
+    ? 'Backend ещё не поддерживает Global Catalog API'
+    : `${rows.length} из ${globalCatalog.length} товаров`;
+  target.innerHTML = !globalCatalogAvailable
+    ? '<tr><td colspan="8" class="empty">Раздел недоступен: опубликуйте backend с Global Catalog API.</td></tr>'
+    : rows.length
+      ? rows.map((item) => {
+        const canonicalSource = mediaUrl(item.canonical_image_url);
+        const originalSource = mediaUrl(item.original_image_url);
+        const photo = `<div class="catalog-photo-pair"><span><small>Canonical</small>${canonicalSource
+          ? `<img class="catalog-photo" src="${esc(canonicalSource)}" alt="Canonical" loading="lazy" referrerpolicy="no-referrer">`
+          : '<span class="catalog-photo catalog-photo-empty">Нет</span>'}</span><span><small>Original</small>${originalSource
+          ? `<img class="catalog-photo" src="${esc(originalSource)}" alt="Original" loading="lazy" referrerpolicy="no-referrer">`
+          : '<span class="catalog-photo catalog-photo-empty">Нет</span>'}</span></div>`;
+        const canMerge = item.status === 'active';
+        return `<tr><td>${photo}</td><td class="catalog-product"><strong>${esc(item.canonical_name)}</strong><br><small>#${esc(item.id)} · создан ${new Date(item.created_at).toLocaleDateString('ru-RU')}</small></td><td>${esc(item.gtin || 'Без GTIN')}</td><td>${esc(item.brand || '—')}</td><td>${esc(item.category || '—')}</td><td>${esc(item.stores_count || 0)}<br><small>${esc(item.offers_count || 0)} предложений</small></td><td><span class="status-pill ${esc(item.status)}">${esc(item.status)}</span><br><small>${esc(item.image_processing_status || 'not_requested')}</small></td><td><div class="catalog-actions">${canMerge ? `<button class="action" data-photo-replace-original="${item.id}">Replace original</button><button class="action" data-photo-replace-canonical="${item.id}">Replace canonical</button><button class="action" data-photo-reprocess="${item.id}">Reprocess</button><button class="action" data-photo-action="restore_original:${item.id}">Restore Original</button><button class="action approve" data-photo-action="approve:${item.id}">Approve</button><button class="action warn" data-photo-action="reject:${item.id}">Reject</button><button class="action warn" data-global-merge="${item.id}">Объединить</button>` : ''}</div></td></tr>`;
+      }).join('')
+      : '<tr><td colspan="8" class="empty">Товары не найдены</td></tr>';
+  document.querySelectorAll('[data-global-merge]').forEach((button) => {
+    button.onclick = () => mergeGlobalProduct(button.dataset.globalMerge);
+  });
+  document.querySelectorAll('[data-photo-replace-original]').forEach((button) => {
+    button.onclick = () => replaceGlobalProductPhoto(button.dataset.photoReplaceOriginal, 'original');
+  });
+  document.querySelectorAll('[data-photo-replace-canonical]').forEach((button) => {
+    button.onclick = () => replaceGlobalProductPhoto(button.dataset.photoReplaceCanonical, 'canonical');
+  });
+  document.querySelectorAll('[data-photo-reprocess]').forEach((button) => {
+    button.onclick = () => replaceGlobalProductPhoto(button.dataset.photoReprocess, 'canonical', 'Повторная on-device обработка');
+  });
+  document.querySelectorAll('[data-photo-action]').forEach((button) => {
+    const [action, id] = button.dataset.photoAction.split(':');
+    button.onclick = () => globalProductPhotoAction(id, action);
+  });
+}
+
+function selectImageFile() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/jpeg,image/png,image/webp';
+    input.onchange = () => resolve(input.files?.[0] || null);
+    input.click();
+  });
+}
+
+async function replaceGlobalProductPhoto(id, kind, presetReason = '') {
+  const file = await selectImageFile();
+  if (!file) return;
+  const reason = presetReason || String(window.prompt('Причина замены фото:') || '').trim();
+  if (reason.length < 3) return setError('Укажите причину замены фото.');
+  const body = new FormData();
+  body.append(kind, file, file.name);
+  body.append('reason', reason);
+  try {
+    await api(`/admin/catalog/products/${id}/photos`, { method: 'POST', body });
+    await reloadGlobalCatalog();
+  } catch (error) { setError(`Не удалось заменить фото: ${error.message}`); }
+}
+
+async function globalProductPhotoAction(id, action) {
+  const needsReason = action === 'reject' || action === 'reprocess';
+  const reason = needsReason ? String(window.prompt('Укажите причину:') || '').trim() : '';
+  if (needsReason && reason.length < 3) return setError('Укажите причину действия.');
+  if (!window.confirm(`Выполнить действие ${action} для товара #${id}?`)) return;
+  try {
+    await api(`/admin/catalog/products/${id}/photo-action`, {
+      method: 'POST',
+      body: JSON.stringify({ action, reason }),
+    });
+    await reloadGlobalCatalog();
+  } catch (error) { setError(`Не удалось изменить фото: ${error.message}`); }
+}
+
+async function reloadGlobalCatalog() {
+  if (!globalCatalogAvailable) return;
+  const status = $('globalCatalogStatusFilter')?.value || 'active';
+  const query = ($('globalCatalogSearch')?.value || '').trim();
+  try {
+    const result = await api(`/admin/catalog/products?status=${encodeURIComponent(status)}&q=${encodeURIComponent(query)}&limit=200`);
+    globalCatalog = Array.isArray(result.items) ? result.items : [];
+    renderGlobalCatalog();
+  } catch (error) {
+    setError(`Не удалось загрузить глобальный каталог: ${error.message}`);
+  }
+}
+
+async function mergeGlobalProduct(sourceId) {
+  const targetId = String(window.prompt('ID товара, который нужно оставить основным:') || '').trim();
+  if (!/^\d+$/.test(targetId) || targetId === String(sourceId)) {
+    setError('Укажите другой корректный ID основного товара.');
+    return;
+  }
+  const reason = String(window.prompt('Причина объединения (обязательно):') || '').trim();
+  if (reason.length < 3) {
+    setError('Укажите причину объединения длиной не менее 3 символов.');
+    return;
+  }
+  if (!window.confirm(`Объединить товар #${sourceId} с #${targetId}? Предложения магазинов будут перенесены. Отменить это действие автоматически нельзя.`)) return;
+  try {
+    await api(`/admin/catalog/products/${sourceId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify({ target_id: Number(targetId), reason }),
+    });
+    await reloadGlobalCatalog();
+    $('status').textContent = `Товар #${sourceId} объединён с #${targetId}.`;
+  } catch (error) {
+    setError(`Не удалось объединить товары: ${error.message}`);
+  }
+}
+
 async function resolveReport(id, action) {
   const note = String(window.prompt('Комментарий к решению:') || '').trim();
   if (note.length < 3) {
@@ -522,4 +656,6 @@ document.querySelectorAll('[data-grant-choice]').forEach((button) => {
 });
 $('search').oninput = () => { if (dashboard) renderShops(dashboard.shops || []); };
 ['planFilter', 'statusFilter'].forEach((id) => $(id).onchange = () => { if (dashboard) renderShops(dashboard.shops || []); });
+$('globalCatalogSearch').oninput = () => renderGlobalCatalog();
+$('globalCatalogStatusFilter').onchange = reloadGlobalCatalog;
 ['apiUrl', 'adminKey'].forEach((id) => $(id).addEventListener('keydown', (event) => { if (event.key === 'Enter') load(); }));

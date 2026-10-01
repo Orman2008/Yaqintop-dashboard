@@ -14,7 +14,9 @@ const createDashboard = (responses) => {
     'apiUrl', 'adminKey', 'load', 'refresh', 'addNote', 'adjustmentForm',
     'closeAdjustment', 'cancelAdjustment', 'search', 'planFilter', 'statusFilter',
     'status', 'error', 'metrics', 'plans', 'cities', 'categories', 'shops',
-    'users', 'reports', 'catalogMatches', 'reviews', 'notes', 'adjustmentAmount',
+    'users', 'reports', 'globalCatalog', 'globalCatalogStatus',
+    'globalCatalogSearch', 'globalCatalogStatusFilter', 'catalogMatches',
+    'reviews', 'notes', 'adjustmentAmount',
     'adjustmentDescription', 'adjustmentDialog', 'noteText',
     'freeSubscriptionForm', 'freeSubscriptionDialog', 'grantShopName',
     'grantPlan', 'grantCode', 'grantSubscriptionSubmit', 'closeFreeSubscription',
@@ -80,6 +82,7 @@ test('dashboard loads core data and clearly reports optional endpoints missing o
     '/admin/users': { status: 200, body: [] },
   });
 
+  elements.globalCatalogStatusFilter.value = 'active';
   await context.window.testLoad();
 
   assert.equal(elements.error.textContent, '', `load failed: ${elements.error.textContent}`);
@@ -135,6 +138,26 @@ test('backend URL input is masked just like the administrator key', () => {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   assert.match(html, /id="apiUrl" type="password"/);
   assert.match(html, /id="adminKey" type="password"/);
+});
+
+test('global catalog section loads real API data and exposes guarded merge', async () => {
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  assert.match(html, /id="globalCatalog"/);
+  assert.match(html, /Глобальный каталог/);
+  const { context, elements } = createDashboard({
+    '/admin/dashboard': { status: 200, body: { summary: {}, plans: [], cities: [], product_categories: [], shops: [] } },
+    '/admin/notes': { status: 200, body: [] },
+    '/admin/finance-adjustments': { status: 200, body: [] },
+    '/admin/users': { status: 200, body: [] },
+    '/admin/catalog/products?status=active&limit=200': {
+      status: 200,
+      body: { items: [{ id: 7, canonical_name: 'Coca-Cola', gtin: '00000001234565', status: 'active', offers_count: 2, stores_count: 2, created_at: '2026-10-01T00:00:00Z' }] },
+    },
+  });
+  elements.globalCatalogStatusFilter.value = 'active';
+  await context.window.testLoad();
+  assert.match(elements.globalCatalog.innerHTML, /Coca-Cola/);
+  assert.match(elements.globalCatalog.innerHTML, /data-global-merge="7"/);
 });
 
 test('reviews render store, author, product, rating, text and date', async () => {
@@ -299,4 +322,13 @@ test('user blocking rejects short reasons before sending', async () => {
 
   assert.match(elements.error.textContent, /причину блокировки.*3 символов/i);
   assert.equal(fetchCalls.length, 0);
+});
+
+test('global catalog exposes guarded original and canonical photo management', () => {
+  assert.match(source, /data-photo-replace-original/);
+  assert.match(source, /data-photo-replace-canonical/);
+  assert.match(source, /restore_original/);
+  assert.match(source, /\/photo-action/);
+  assert.match(source, /x-admin-key/);
+  assert.match(source, /body instanceof FormData/);
 });
