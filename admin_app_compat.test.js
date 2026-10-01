@@ -248,7 +248,7 @@ test('moderation decisions reject blank resolution notes before sending', async 
   const { context, elements, fetchCalls } = createDashboard({});
   context.window.prompt = () => '  ';
 
-  await context.window.testResolveReport('42', 'resolved');
+  await context.window.testResolveReport('42', 'dismiss');
 
   assert.match(elements.error.textContent, /минимум 3 символа/);
   assert.equal(fetchCalls.length, 0);
@@ -256,19 +256,29 @@ test('moderation decisions reject blank resolution notes before sending', async 
 
 test('moderation decisions trim and send the resolution note required by backend', async () => {
   const { context, elements, fetchCalls } = createDashboard({
-    '/admin/moderation/reports/42': { status: 200, body: { report: { id: 42 } } },
+    '/admin/moderation/reports/42/action': { status: 200, body: { report: { id: 42 } } },
   });
   context.window.prompt = () => '  Проверено  ';
 
-  await context.window.testResolveReport('42', 'resolved');
+  await context.window.testResolveReport('42', 'dismiss');
 
   assert.equal(elements.error.textContent, '');
   assert.equal(fetchCalls.length, 1);
-  assert.equal(fetchCalls[0].options.method, 'PATCH');
+  assert.equal(fetchCalls[0].options.method, 'POST');
   assert.deepEqual(JSON.parse(fetchCalls[0].options.body), {
-    status: 'resolved',
-    resolution_note: 'Проверено',
+    action: 'dismiss',
+    note: 'Проверено',
   });
+});
+
+test('destructive moderation actions require an explicit confirmation', async () => {
+  const { context, fetchCalls } = createDashboard({});
+  context.window.prompt = () => 'Подтверждённое нарушение';
+  context.window.confirm = () => false;
+
+  await context.window.testResolveReport('42', 'remove_content');
+
+  assert.equal(fetchCalls.length, 0);
 });
 
 test('shop blocking rejects short reasons before sending', async () => {

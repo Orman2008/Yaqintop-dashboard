@@ -424,20 +424,22 @@ function renderReports() {
   $('reports').innerHTML = !moderationAvailable
     ? '<tr><td colspan="5" class="empty">Раздел недоступен: обновите backend до версии с API модерации.</td></tr>'
     : moderationReports.length
-    ? moderationReports.map((report) => `<tr><td>${esc(report.entity_type)} #${report.entity_id}</td><td>${esc(report.reason)}</td><td>${esc(report.details || '—')}</td><td>${new Date(report.created_at).toLocaleString('ru-RU')}</td><td><div class="actions"><button class="action approve" data-report-resolve="${report.id}">Решено</button><button class="action" data-report-dismiss="${report.id}">Отклонить</button></div></td></tr>`).join('')
+    ? moderationReports.map((report) => `<tr><td>${esc(report.entity_type)} #${report.entity_id}</td><td>${esc(report.reason)}</td><td>${esc(report.details || '—')}</td><td>${new Date(report.created_at).toLocaleString('ru-RU')}</td><td><div class="actions"><button class="action" data-report-dismiss="${report.id}">Отклонить</button><button class="action warn" data-report-remove="${report.id}">Удалить контент</button><button class="danger" data-report-restrict="${report.id}">Ограничить аккаунт</button></div></td></tr>`).join('')
     : '<tr><td colspan="5" class="empty">Открытых жалоб нет</td></tr>';
-  document.querySelectorAll('[data-report-resolve]').forEach((button) => { button.onclick = () => resolveReport(button.dataset.reportResolve, 'resolved'); });
-  document.querySelectorAll('[data-report-dismiss]').forEach((button) => { button.onclick = () => resolveReport(button.dataset.reportDismiss, 'dismissed'); });
+  document.querySelectorAll('[data-report-dismiss]').forEach((button) => { button.onclick = () => resolveReport(button.dataset.reportDismiss, 'dismiss'); });
+  document.querySelectorAll('[data-report-remove]').forEach((button) => { button.onclick = () => resolveReport(button.dataset.reportRemove, 'remove_content'); });
+  document.querySelectorAll('[data-report-restrict]').forEach((button) => { button.onclick = () => resolveReport(button.dataset.reportRestrict, 'restrict_account'); });
 }
 
-async function resolveReport(id, status) {
+async function resolveReport(id, action) {
   const note = String(window.prompt('Комментарий к решению:') || '').trim();
   if (note.length < 3) {
     setError('Добавьте комментарий к решению (минимум 3 символа).');
     return;
   }
+  if (action !== 'dismiss' && !window.confirm('Это действие изменит контент или доступ пользователя. Продолжить?')) return;
   try {
-    await api(`/admin/moderation/reports/${id}`, { method: 'PATCH', body: JSON.stringify({ status, resolution_note: note }) });
+    await api(`/admin/moderation/reports/${id}/action`, { method: 'POST', body: JSON.stringify({ action, note }) });
     moderationReports = moderationReports.filter((item) => String(item.id) !== String(id));
     renderReports();
   } catch (error) { setError(`Не удалось обработать жалобу: ${error.message}`); }
