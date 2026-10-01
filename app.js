@@ -305,7 +305,7 @@ function renderReviews() {
   $('reviews').innerHTML = !reviewsAvailable
     ? '<tr><td colspan="6" class="empty">Backend пока отвечает 404 на API отзывов. Опубликуйте обновление backend.</td></tr>'
     : reviews.length
-    ? reviews.map((review) => `<tr><td><strong>${esc(review.shop_name)}</strong><br><small>#${esc(review.shop_id)}</small></td><td>${esc(review.author_name || 'Покупатель')}<br><small>#${esc(review.author_id)}</small></td><td>${esc(review.product_name)}<br><small>#${esc(review.product_id)}</small></td><td><span class="review-rating">${'★'.repeat(Math.max(0, Math.min(5, Number(review.rating) || 0)))}${'☆'.repeat(5 - Math.max(0, Math.min(5, Number(review.rating) || 0)))}</span></td><td class="review-text">${esc(review.text || 'Без текста')}</td><td>${new Date(review.updated_at || review.created_at).toLocaleString('ru-RU')}</td></tr>`).join('')
+    ? reviews.map((review) => `<tr><td><strong>${esc(review.shop_name)}</strong><br><small>#${esc(review.shop_id)}</small></td><td>${esc(review.author_name || 'Покупатель')}<br><small>#${esc(review.author_id)}</small></td><td>${esc(review.product_name)}<br><small>#${esc(review.product_id)}</small></td><td><span class="review-rating">${'★'.repeat(Math.max(0, Math.min(5, Number(review.rating) || 0)))}${'☆'.repeat(5 - Math.max(0, Math.min(5, Number(review.rating) || 0)))}</span></td><td class="review-text">${esc(review.text || 'Без текста')}<br><button class="action warn" data-delete-review="${review.id}">Удалить отзыв</button></td><td>${new Date(review.updated_at || review.created_at).toLocaleString('ru-RU')}</td></tr>`).join('')
     : '<tr><td colspan="6" class="empty">Отзывов пока нет</td></tr>';
 }
 
@@ -400,8 +400,9 @@ async function moderateShop(id, status, verificationStatus) {
       return;
     }
   }
+  if (!window.confirm('Подтвердить изменение статуса магазина?')) return;
   try {
-    await api(`/admin/shops/${id}/moderation`, { method: 'PATCH', body: JSON.stringify({ status, verification_status: verificationStatus, reason }) });
+    await api(`/admin/shops/${id}/moderation`, { method: 'PATCH', body: JSON.stringify({ status, verification_status: verificationStatus, reason, confirmed: true }) });
     await load();
   } catch (error) { setError(`Не удалось изменить статус магазина: ${error.message}`); }
 }
@@ -428,8 +429,9 @@ async function setUserBlocked(user) {
       return;
     }
   }
+  if (!window.confirm('Подтвердить изменение доступа аккаунта?')) return;
   try {
-    await api(`/admin/users/${user.id}/block`, { method: 'PATCH', body: JSON.stringify({ blocked, reason }) });
+    await api(`/admin/users/${user.id}/block`, { method: 'PATCH', body: JSON.stringify({ blocked, reason, confirmed: true }) });
     await load();
   } catch (error) { setError(`Не удалось изменить статус пользователя: ${error.message}`); }
 }
@@ -438,10 +440,12 @@ function renderReports() {
   $('reports').innerHTML = !moderationAvailable
     ? '<tr><td colspan="5" class="empty">Раздел недоступен: обновите backend до версии с API модерации.</td></tr>'
     : moderationReports.length
-    ? moderationReports.map((report) => `<tr><td>${esc(report.entity_type)} #${report.entity_id}</td><td>${esc(report.reason)}</td><td>${esc(report.details || '—')}</td><td>${new Date(report.created_at).toLocaleString('ru-RU')}</td><td><div class="actions"><button class="action" data-report-dismiss="${report.id}">Отклонить</button><button class="action warn" data-report-remove="${report.id}">Удалить контент</button><button class="danger" data-report-restrict="${report.id}">Ограничить аккаунт</button></div></td></tr>`).join('')
+    ? moderationReports.map((report) => `<tr><td><button class="action" data-report-detail="${report.id}">${esc(report.entity_type)} #${report.entity_id}</button><br><small>Автор ${esc(report.reporter_name || report.reporter_user_id || '—')}</small></td><td>${esc(report.reason)}</td><td>${esc(report.details || '—')}</td><td>${new Date(report.created_at).toLocaleString('ru-RU')}</td><td><div class="actions"><button class="action" data-report-dismiss="${report.id}">Отклонить</button>${['product','review','message','image'].includes(report.entity_type) ? `<button class="action warn" data-report-remove="${report.id}">Удалить контент</button>` : ''}${report.entity_type !== 'image' ? `<button class="danger" data-report-restrict="${report.id}">Ограничить аккаунт</button><button class="danger" data-report-account-block="${report.id}">Блокировать аккаунт</button>` : ''}${['shop','product','message'].includes(report.entity_type) ? `<button class="danger" data-report-store-block="${report.id}">Блокировать магазин</button>` : ''}</div></td></tr>`).join('')
     : '<tr><td colspan="5" class="empty">Открытых жалоб нет</td></tr>';
   document.querySelectorAll('[data-report-dismiss]').forEach((button) => { button.onclick = () => resolveReport(button.dataset.reportDismiss, 'dismiss'); });
   document.querySelectorAll('[data-report-remove]').forEach((button) => { button.onclick = () => resolveReport(button.dataset.reportRemove, 'remove_content'); });
+  document.querySelectorAll('[data-report-account-block]').forEach(b => b.onclick=()=>resolveReport(b.dataset.reportAccountBlock,'block_account'));
+  document.querySelectorAll('[data-report-store-block]').forEach(b => b.onclick=()=>resolveReport(b.dataset.reportStoreBlock,'block_store'));
   document.querySelectorAll('[data-report-restrict]').forEach((button) => { button.onclick = () => resolveReport(button.dataset.reportRestrict, 'restrict_account'); });
 }
 
@@ -452,7 +456,12 @@ function renderGlobalCatalog() {
   const status = $('globalCatalogStatusFilter')?.value || 'active';
   const rows = globalCatalog.filter((item) => {
     const haystack = `${item.canonical_name || ''} ${item.brand || ''} ${item.gtin || ''} ${item.category || ''}`.toLowerCase();
-    return (!query || haystack.includes(query)) && (status === 'all' || item.status === status);
+    return (!query || haystack.includes(query)) && (status === 'all' || item.status === status)
+      && (!$('catalogNoGtin')?.checked || !item.gtin)
+      && (!$('catalogNoPhoto')?.checked || !item.canonical_image_url)
+      && (!$('catalogDuplicates')?.checked || Number(item.pending_matches)>0)
+      && (!$('catalogPhotoPending')?.checked || ['processing','reprocess_requested','processed'].includes(item.image_processing_status))
+      && (!$('catalogPhotoRejected')?.checked || item.image_processing_status==='rejected');
   });
   $('globalCatalogStatus').textContent = !globalCatalogAvailable
     ? 'Backend ещё не поддерживает Global Catalog API'
@@ -469,7 +478,7 @@ function renderGlobalCatalog() {
           ? `<img class="catalog-photo" src="${esc(originalSource)}" alt="Original" loading="lazy" referrerpolicy="no-referrer">`
           : '<span class="catalog-photo catalog-photo-empty">Нет</span>'}</span></div>`;
         const canMerge = item.status === 'active';
-        return `<tr><td>${photo}</td><td class="catalog-product"><strong>${esc(item.canonical_name)}</strong><br><small>#${esc(item.id)} · создан ${new Date(item.created_at).toLocaleDateString('ru-RU')}</small></td><td>${esc(item.gtin || 'Без GTIN')}</td><td>${esc(item.brand || '—')}</td><td>${esc(item.category || '—')}</td><td>${esc(item.stores_count || 0)}<br><small>${esc(item.offers_count || 0)} предложений</small></td><td><span class="status-pill ${esc(item.status)}">${esc(item.status)}</span><br><small>${esc(item.image_processing_status || 'not_requested')}</small></td><td><div class="catalog-actions">${canMerge ? `<button class="action" data-photo-replace-original="${item.id}">Replace original</button><button class="action" data-photo-replace-canonical="${item.id}">Replace canonical</button><button class="action" data-photo-reprocess="${item.id}">Reprocess</button><button class="action" data-photo-action="restore_original:${item.id}">Restore Original</button><button class="action approve" data-photo-action="approve:${item.id}">Approve</button><button class="action warn" data-photo-action="reject:${item.id}">Reject</button><button class="action warn" data-global-merge="${item.id}">Объединить</button>` : ''}</div></td></tr>`;
+        return `<tr><td>${photo}</td><td class="catalog-product"><strong>${esc(item.canonical_name)}</strong><br><small>#${esc(item.id)} · создан ${new Date(item.created_at).toLocaleDateString('ru-RU')}</small></td><td>${esc(item.gtin || 'Без GTIN')}</td><td>${esc(item.brand || '—')}</td><td>${esc(item.category || '—')}</td><td>${esc(item.stores_count || 0)}<br><small>${esc(item.offers_count || 0)} предложений</small></td><td><span class="status-pill ${esc(item.status)}">${esc(item.status)}</span><br><small>${esc(item.image_processing_status || 'not_requested')}</small></td><td><div class="catalog-actions">${canMerge ? `<button class="action" data-catalog-detail="${item.id}">Metadata / GTIN</button><button class="action" data-photo-replace-original="${item.id}">Replace original</button><button class="action" data-photo-replace-canonical="${item.id}">Replace canonical</button><button class="action" data-photo-reprocess="${item.id}">Reprocess</button><button class="action" data-photo-action="restore_original:${item.id}">Restore Original</button><button class="action approve" data-photo-action="approve:${item.id}">Approve</button><button class="action warn" data-photo-action="reject:${item.id}">Reject</button><button class="action warn" data-global-merge="${item.id}">Объединить</button>` : ''}</div></td></tr>`;
       }).join('')
       : '<tr><td colspan="8" class="empty">Товары не найдены</td></tr>';
   document.querySelectorAll('[data-global-merge]').forEach((button) => {
@@ -571,9 +580,9 @@ async function resolveReport(id, action) {
     setError('Добавьте комментарий к решению (минимум 3 символа).');
     return;
   }
-  if (action !== 'dismiss' && !window.confirm('Это действие изменит контент или доступ пользователя. Продолжить?')) return;
+  if (!window.confirm('Это действие изменит контент или доступ пользователя. Продолжить?')) return;
   try {
-    await api(`/admin/moderation/reports/${id}/action`, { method: 'POST', body: JSON.stringify({ action, note }) });
+    await api(`/admin/moderation/reports/${id}/action`, { method: 'POST', body: JSON.stringify({ action, note, confirmed: true }) });
     moderationReports = moderationReports.filter((item) => String(item.id) !== String(id));
     renderReports();
   } catch (error) { setError(`Не удалось обработать жалобу: ${error.message}`); }
@@ -583,9 +592,10 @@ function renderCatalogMatches() {
   $('catalogMatches').innerHTML = !catalogMatchesAvailable
     ? '<tr><td colspan="5" class="empty">Раздел недоступен: обновите backend до версии с API каталога.</td></tr>'
     : catalogMatches.length
-    ? catalogMatches.map((item) => `<tr><td><strong>${esc(item.product_title)}</strong><br><small>${esc([item.product_brand, item.product_model].filter(Boolean).join(' ') || 'Без бренда/модели')}</small></td><td><strong>${esc(item.candidate_name)}</strong><br><small>${esc([item.candidate_brand, item.candidate_model].filter(Boolean).join(' ') || 'Без бренда/модели')}</small></td><td>${Math.round(Number(item.confidence || 0) * 100)}%<br><small>${esc(item.match_method)}</small></td><td>${esc(item.shop_name)}</td><td><div class="actions"><button class="action approve" data-match-confirm="${item.id}">Объединить</button><button class="action warn" data-match-reject="${item.id}">Не совпадает</button></div></td></tr>`).join('')
+    ? catalogMatches.map((item) => `<tr><td>${mediaUrl(item.product_image) ? `<img class="catalog-photo" src="${esc(mediaUrl(item.product_image))}" alt="Product">` : ''}<strong>${esc(item.product_title)}</strong><br><small>GTIN ${esc(item.product_gtin || '—')} · ${esc(item.product_category || '—')}</small><br><small>${esc([item.product_brand, item.product_model].filter(Boolean).join(' ') || 'Без бренда/модели')}</small></td><td>${mediaUrl(item.candidate_image) ? `<img class="catalog-photo" src="${esc(mediaUrl(item.candidate_image))}" alt="Candidate">` : ''}<strong>${esc(item.candidate_name)}</strong><br><small>GTIN ${esc(item.candidate_gtin || '—')} · ${esc(item.candidate_category || '—')}<br>${esc(JSON.stringify(item.candidate_attributes || {}))}<br>Магазинов ${esc(item.candidate_stores_count || 0)} · предложений ${esc(item.candidate_offers_count || 0)}</small><br><small>${esc([item.candidate_brand, item.candidate_model].filter(Boolean).join(' ') || 'Без бренда/модели')}</small></td><td>${Math.round(Number(item.confidence || 0) * 100)}%<br><small>${esc(item.match_method)}</small></td><td>${esc(item.shop_name)}</td><td><div class="actions"><button class="action approve" data-match-confirm="${item.id}">Объединить</button><button class="action warn" data-match-reject="${item.id}">Не совпадает</button><button class="action" data-match-defer="${item.id}">Позже</button></div></td></tr>`).join('')
     : '<tr><td colspan="5" class="empty">Кандидатов для ручной проверки нет</td></tr>';
   document.querySelectorAll('[data-match-confirm]').forEach((button) => { button.onclick = () => decideCatalogMatch(button.dataset.matchConfirm, 'confirm'); });
+  document.querySelectorAll('[data-match-defer]').forEach(b => b.onclick=()=>decideCatalogMatch(b.dataset.matchDefer,'defer'));
   document.querySelectorAll('[data-match-reject]').forEach((button) => { button.onclick = () => decideCatalogMatch(button.dataset.matchReject, 'reject'); });
 }
 
@@ -595,10 +605,12 @@ async function decideCatalogMatch(id, decision) {
     : 'Почему товары не совпадают?';
   const reason = window.prompt(promptText, '') ?? null;
   if (reason === null) return;
+  if (reason.trim().length<3) { setError('Укажите причину решения (минимум 3 символа).'); return; }
+  if (decision==='confirm' && !window.confirm('Подтверждаете, что это один и тот же товар?')) return;
   try {
     await api(`/admin/catalog/match-candidates/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ decision, reason }),
+      body: JSON.stringify({ decision, reason, confirmed: decision==='confirm' }),
     });
     catalogMatches = catalogMatches.filter((item) => String(item.id) !== String(id));
     renderCatalogMatches();

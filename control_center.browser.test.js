@@ -1,0 +1,72 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+let chromium;
+try { ({ chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch (_) { /* Optional browser test runtime. */ }
+
+test('control center browser regression: navigation, private support, actions, XSS and mobile', { skip: !chromium }, async (t) => {
+  const files = new Set(['index.html','styles.css','runtime-config.js','app.js','control_center.js','control_center.css']);
+  const server = http.createServer((req, res) => {
+    const file = new URL(req.url, 'http://localhost').pathname.slice(1) || 'index.html';
+    if (!files.has(file)) return res.writeHead(404).end();
+    res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html');
+    res.end(fs.readFileSync(path.join(__dirname, file)));
+  });
+  server.listen(0, '127.0.0.1'); await new Promise((resolve) => server.once('listening', resolve));
+  let browser;
+  t.after(async () => { await browser?.close(); server.close(); });
+  browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL || 'msedge' });
+  const page = await browser.newPage(); const errors = []; const requests = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  let status = 'WAITING_ADMIN'; let failed = false;
+  const shop = { id: 2, name: 'Real fixture store', plan: 'FREE', city: 'Ташкент', owner_name: 'Owner' };
+  await page.route('**/admin/**', async (route) => {
+    const req = route.request(); const u = new URL(req.url()); const body = req.postDataJSON();
+    requests.push({ path: u.pathname, method: req.method(), body, key: req.headers()['x-admin-key'] });
+    let data = [];
+    if (u.pathname === '/admin/dashboard') data = { summary: {}, shops: [shop], plans: [], cities: [], product_categories: [] };
+    if (u.pathname === '/admin/catalog/products') data = { items: [] };
+    if (u.pathname === '/admin/reviews') data = { reviews: [], total_count: 0, has_more: false };
+    if (u.pathname === '/admin/control/summary') data = { open_support_tickets: 1, global_products: 2 };
+    if (u.pathname === '/admin/control/users') data = [{ id: 1, name: 'Fixture buyer', role: 'buyer' }];
+    if (u.pathname === '/admin/control/users/1') data = { user: { id: 1, name: 'Fixture buyer' }, stores: [], tickets: [], reports: [], history: [] };
+    if (u.pathname === '/admin/control/stores/2') data = { store: shop, staff: [], products: [], offers: [], reports: [], subscriptions: [], tickets: [] };
+    if (u.pathname === '/admin/control/taxonomy') data = { categories: [], brands: [] };
+    if (u.pathname === '/admin/support') data = { counters: [{ status, count: 1, unread: 1 }], tickets: [{ id: 7, status, display_name: '<img src=x onerror="window.injected=true">', category: 'account', user_type: 'buyer', unread_count: 1 }] };
+    if (u.pathname === '/admin/support/7/reply') { failed = true; data = { queued: true }; }
+    if (u.pathname === '/admin/support/7/retry/99') { failed = false; data = { queued: true }; }
+    if (u.pathname === '/admin/support/7/close') { status = 'RESOLVED'; data = { ok: true }; }
+    if (u.pathname === '/admin/support/7') data = { ticket: { id: 7, status, display_name: 'Fixture', user_type: 'buyer' }, shops: [shop], messages: [{ id: 3, sender_type: 'USER', text: '<script>window.injected=true</script>', media_storage_key: 'support/3.png' }, ...(failed ? [{ id: 99, sender_type: 'ADMIN', text: 'Retained reply', delivery_status: 'FAILED', delivery_error: 'TELEGRAM_403' }] : [])] };
+    if (u.pathname === '/admin/support/media/3') return route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY9sAAAAASUVORK5CYII=', 'base64') });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) });
+  });
+  await page.goto(`http://127.0.0.1:${server.address().port}`);
+  await page.locator('#apiUrl').fill(`http://127.0.0.1:${server.address().port}`);
+  await page.locator('#adminKey').fill('fixture-admin-key'); await page.locator('#load').click();
+  await page.locator('[data-page-button="support"]').click(); await page.locator('[data-ticket="7"]').click();
+  await page.locator('[data-support-image="3"]').waitFor();
+  await page.waitForFunction(() => document.querySelector('[data-support-image="3"]').src.startsWith('blob:'));
+  assert.equal(await page.evaluate(() => window.injected), undefined);
+  await page.locator('#supportReply').fill('Ответ администратора'); await page.locator('#supportSend').click();
+  await page.locator('[data-retry="99"]').waitFor(); assert.match(await page.locator('#supportConversation').innerText(), /TELEGRAM_403/);
+  await page.locator('[data-retry="99"]').click();
+  const answers = ['Причина закрытия', 'CLOSE 7']; page.on('dialog', (dialog) => dialog.accept(answers.shift() || ''));
+  await page.locator('#supportClose').click(); await page.waitForFunction(() => document.querySelector('#supportConversation').textContent.includes('История сохранена'));
+  assert.equal(requests.find((r) => r.path.endsWith('/reply')).body.text, 'Ответ администратора');
+  assert.ok(requests.find((r) => r.path.endsWith('/close')).body.confirmation === 'CLOSE 7');
+  assert.equal(requests.find((r) => r.path.includes('/media/')).key, 'fixture-admin-key');
+  await page.locator('[data-page-button="users"]').click(); await page.locator('[data-user-detail="1"]').click();
+  await page.locator('.control-dialog[open]').waitFor();
+  assert.match(await page.locator('#controlDetail').innerText(), /Fixture buyer/); await page.locator('#closeControlDetail').click();
+  await page.locator('[data-page-button="stores"]').click(); await page.locator('#shops strong').first().click();
+  await page.locator('.control-dialog[open]').waitFor();
+  assert.match(await page.locator('#controlDetail').innerText(), /Real fixture store/); await page.locator('#closeControlDetail').click();
+  for (const name of ['catalog','reports','reviews','taxonomy','subscriptions','operations','audit','dashboard']) await page.locator(`[data-page-button="${name}"]`).click();
+  await page.setViewportSize({ width: 390, height: 844 }); await page.locator('[data-page-button="support"]').click();
+  assert.ok(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth));
+  await page.locator('#adminKey').fill('changed-key'); assert.equal(await page.locator('#supportInbox').innerText(), '');
+  assert.deepEqual(errors, []);
+});

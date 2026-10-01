@@ -47,6 +47,7 @@ const createDashboard = (responses) => {
     window: {
       MAPMARKET_CONFIG: { PUBLIC_API_BASE_URL: 'https://api.example.test' },
       prompt: () => null,
+      confirm: () => true,
     },
     document: {
     getElementById: (id) => elements[id] || (elements[id] = {
@@ -291,6 +292,7 @@ test('moderation decisions trim and send the resolution note required by backend
   assert.deepEqual(JSON.parse(fetchCalls[0].options.body), {
     action: 'dismiss',
     note: 'Проверено',
+    confirmed: true,
   });
 });
 
