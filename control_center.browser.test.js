@@ -35,6 +35,9 @@ test('control center browser regression: navigation, private support, actions, X
     if (u.pathname === '/admin/control/users/1') data = { user: { id: 1, name: 'Fixture buyer' }, stores: [], tickets: [], reports: [], history: [] };
     if (u.pathname === '/admin/control/stores/2') data = { store: shop, staff: [], products: [], offers: [], reports: [], subscriptions: [], tickets: [] };
     if (u.pathname === '/admin/control/taxonomy') data = { categories: [], brands: [] };
+    if (u.pathname === '/admin/partnerships') data = { items: [{ id: 5, root_shop_id: 2, owner_user_id: 1, business_name: 'TECHSTORE', owner_name: 'Owner', current_plan: 'BUSINESS_PLUS', current_branch_count: 15, status: 'NEW', message: 'Нужны 20 филиалов' }] };
+    if (u.pathname === '/admin/partnerships/5') data = { id: 5, status: 'CONTACTED', internal_note: 'Связались' };
+    if (u.pathname === '/admin/branches/2') data = { shop: { id: 2, business_id: 2, business_name: 'TECHSTORE', is_main: true }, branches: [{ id: 2, name: 'TECHSTORE', store_code: 'MP-EIDNS3', is_main: true, address: 'Yunusabad', branch_status: 'active' }, { id: 3, name: 'Chilanzar', store_code: 'MP-EIDNS3-1', is_main: false, address: 'Chilanzar', branch_status: 'active' }], staff: [], products: [], analytics: [], qr: [], history: [] };
     if (u.pathname === '/admin/support') data = { counters: [{ status, count: 1, unread: 1 }], tickets: [{ id: 7, status, display_name: '<img src=x onerror="window.injected=true">', category: 'account', user_type: 'buyer', unread_count: 1 }] };
     if (u.pathname === '/admin/support/7/reply') { failed = true; data = { queued: true }; }
     if (u.pathname === '/admin/support/7/retry/99') { failed = false; data = { queued: true }; }
@@ -65,6 +68,14 @@ test('control center browser regression: navigation, private support, actions, X
   await page.locator('.control-dialog[open]').waitFor();
   assert.match(await page.locator('#controlDetail').innerText(), /Real fixture store/); await page.locator('#closeControlDetail').click();
   for (const name of ['catalog','reports','reviews','taxonomy','subscriptions','operations','audit','dashboard']) await page.locator(`[data-page-button="${name}"]`).click();
+  await page.locator('[data-page-button="partnerships"]').click();
+  await page.locator('[data-partnership="5"]').click();
+  assert.match(await page.locator('#controlDetail').innerText(), /Нужны 20 филиалов/);
+  await page.locator('#partnershipStore').click();
+  await page.locator('#controlDetail [data-admin-branch="3"]').waitFor();
+  assert.match(await page.locator('#controlDetail').innerText(), /MP-EIDNS3-1/);
+  assert.match(await page.locator('#controlDetail').innerText(), /ФИЛИАЛ/);
+  await page.locator('#closeControlDetail').click();
   await page.setViewportSize({ width: 390, height: 844 }); await page.locator('[data-page-button="support"]').click();
   assert.ok(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth));
   await page.locator('#adminKey').fill('changed-key'); assert.equal(await page.locator('#supportInbox').innerText(), '');
