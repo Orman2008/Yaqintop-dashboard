@@ -1,0 +1,22 @@
+:root { --admin-background:#f6f8fb; --admin-surface:#fff; --admin-elevated:#f1f5f9; --admin-text:#111827; --admin-secondary:#475467; --admin-border:#cbd5e1; --admin-brand:#1d4ed8; --admin-brand-soft:#eff6ff; --admin-success:#15803d; --admin-warning:#9a6700; --admin-error:#b42318; }
+:root[data-theme=dark] { --admin-background:#101620; --admin-surface:#192230; --admin-elevated:#243245; --admin-text:#edf2fa; --admin-secondary:#b0bdd0; --admin-border:#3b4b61; --admin-brand:#79bdff; --admin-brand-soft:#173951; --admin-success:#71db9c; --admin-warning:#f5ca73; --admin-error:#ff9494; }
+body { background:var(--admin-background); color:var(--admin-text); }
+header,.panel,.metric,dialog,.control-nav button,.support-ticket,.support-message,.note,.plan-choice { background:var(--admin-surface); color:var(--admin-text); border-color:var(--admin-border); }
+input,textarea,select,button,.action { background:var(--admin-surface); color:var(--admin-text); border-color:var(--admin-border); }
+th,thead,tbody tr:hover,.support-message.admin,.plan-choice[aria-pressed=true] { background:var(--admin-elevated); color:var(--admin-text); }
+td,th,table,.support-message,.detail-fields,.connection,.section-title,.notes,.plan-choice,.panel { border-color:var(--admin-border); }
+.muted,small,header p,.detail-fields dt,label { color:var(--admin-secondary); }
+a { color:var(--admin-brand); }
+.primary,.control-nav button.active { background:#0874ab; color:#fff; border-color:#0874ab; }
+.action.approve,.status-ok { color:var(--admin-success); border-color:var(--admin-success); }
+.action.warn { color:var(--admin-warning); border-color:var(--admin-warning); }
+.error,.status-bad { color:var(--admin-error); }
+dialog::backdrop { background:#10182899; }
+.control-nav { background:var(--admin-background); }
+.status-pill,.status-pill.merged,.status-pill.blocked,.catalog-photo-empty { background:var(--admin-elevated); color:var(--admin-text); }
+.plan-choice.selected,.plan-choice.selected small { background:var(--admin-brand-soft); color:var(--admin-brand); border-color:var(--admin-brand); }
+.adjustment-dialog label,.dialog-heading p,.revenue-value small,.catalog-photo-pair>span { color:var(--admin-secondary); }
+.dialog-actions>button:not(.primary),.ops-filters input,.ops-filters select { background:var(--admin-surface); color:var(--admin-text); border-color:var(--admin-border); }
+dialog fieldset label { display:flex; align-items:center; gap:12px; padding:12px 0; }
+:focus-visible { outline:3px solid var(--admin-brand); outline-offset:3px; }
+/* Theme only: no motion, image filters, map changes or new admin operations. */

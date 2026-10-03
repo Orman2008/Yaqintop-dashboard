@@ -1,0 +1,10 @@
+{
+  "name": "mapmarket-admin",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "node build.js",
+    "check": "node --check app.js && node --check control_center.js && node --check operations_center.js",
+    "test": "node --test admin_app_compat.test.js control_center.browser.test.js"
+  }
+}

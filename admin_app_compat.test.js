@@ -91,7 +91,7 @@ test('dashboard loads core data and clearly reports optional endpoints missing o
   assert.match(elements.status.textContent, /Backend не поддерживает/);
   assert.match(elements.reports.innerHTML, /обновите backend до версии с API модерации/i);
   assert.match(elements.catalogMatches.innerHTML, /обновите backend до версии с API каталога/i);
-  assert.match(elements.metrics.innerHTML, /Доход в месяц/);
+  assert.match(elements.metrics.innerHTML, /Ожидаемый MRR/);
 });
 
 test('optional endpoints only tolerate 404; auth and server errors still fail', async () => {
@@ -247,6 +247,7 @@ test('Admin API request timeout aborts the request with a retryable message', as
   const window = {};
   const context = {
     window,
+    adminSession: null,
     connection: () => ({ base: 'https://api.example.test', key: 'test-key' }),
     AbortController,
     setTimeout: (callback) => { callback(); return 1; },

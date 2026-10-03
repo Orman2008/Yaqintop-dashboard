@@ -8,7 +8,7 @@
     s.dataset.page = groupByTitle[s.querySelector('h2')?.textContent] || 'dashboard';
   });
   const nav = document.createElement('nav'); nav.className = 'control-nav';
-  const pages = [['dashboard', 'Dashboard'], ['users', 'Users'], ['stores', 'Stores'], ['catalog', 'Global Catalog'], ['reports', 'Reports'], ['support', 'Support'], ['reviews', 'Reviews / UGC'], ['taxonomy', 'Categories & Brands'], ['subscriptions', 'Subscriptions'], ['operations', 'Operations'], ['audit', 'Audit Log']];
+  const pages = [['dashboard','Dashboard'],['stores','Stores'],['users','Users'],['products','Products'],['search','Search Intelligence'],['qr','QR Deals'],['moderation','Moderation'],['operations','Operations'],['finance','Finance'],['tasks','Notes'],['audit','Audit Log'],['catalog','Global Catalog'],['support','Support'],['reviews','Reviews / UGC'],['reports','Reports'],['taxonomy','Categories & Brands'],['subscriptions','Subscriptions']];
   nav.innerHTML = pages.map(([id, label]) => `<button type="button" data-page-button="${id}">${label}</button>`).join('');
   main.insertBefore(nav, $('error'));
   const panel = (page, html) => {
@@ -188,6 +188,7 @@
     for (const id of ['supportInbox','supportConversation','supportCounters','controlUsers','controlSummary','auditRows','operationsData','taxonomyData']) $(id).replaceChildren();
     dialog.close();
   };
+  window.MapMarketControl = { navigate, storeDetail, userDetail, clearPrivateState };
   for (const id of ['apiUrl','adminKey']) $(id).addEventListener('input', clearPrivateState);
   function bindReports() {
     $('reports').querySelectorAll('[data-report-detail]').forEach(b => b.onclick=handle(async()=>{
@@ -225,7 +226,7 @@
   main.querySelectorAll('[data-page]').forEach((s) => s.hidden = s.dataset.page !== page);
   nav.querySelector('[data-page-button="dashboard"]').classList.add('active');
   setInterval(async () => {
-    if (page !== 'support' || pollBusy || document.hidden || !$('adminKey').value) return;
+    if (page !== 'support' || pollBusy || document.hidden || (!$('adminKey').value && !adminSession)) return;
     pollBusy = true;
     try { await inbox(); if (selectedTicket && document.activeElement !== $('supportReply')) await conversation(); }
     catch (error) { setError(error.message); } finally { pollBusy = false; }

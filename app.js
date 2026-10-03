@@ -17,6 +17,7 @@ let reviewsAvailable = true;
 let adjustmentsOpen = false;
 let dashboardLoading = false;
 let grantShopId = null;
+let adminSession = null;
 
 const configuredApiBase = String(window.MAPMARKET_CONFIG?.PUBLIC_API_BASE_URL || '').trim().replace(/\/$/, '');
 const ADMIN_API_TIMEOUT_MS = 15_000;
@@ -56,7 +57,7 @@ function clearDashboardData() {
 function connection() {
   const base = $('apiUrl').value.trim().replace(/\/$/, '');
   const key = $('adminKey').value.trim();
-  if (!base || !key) throw new Error('Укажите URL backend и ADMIN_API_KEY.');
+  if (!base || (!key && !adminSession)) throw new Error('Укажите URL backend и ADMIN_API_KEY.');
   let parsed;
   try { parsed = new URL(base); } catch { throw new Error('Укажите корректный URL backend.'); }
   const localHost = ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
@@ -68,6 +69,7 @@ function connection() {
 
 async function api(path, options = {}) {
   const { base, key } = connection();
+  const requestToken = adminSession?.token;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), ADMIN_API_TIMEOUT_MS);
   let response;
@@ -78,7 +80,7 @@ async function api(path, options = {}) {
       signal: controller.signal,
       headers: {
         ...(!isFormData ? { 'content-type': 'application/json' } : {}),
-        'x-admin-key': key,
+        ...(adminSession ? { authorization: `Bearer ${adminSession.token}` } : { 'x-admin-key': key }),
         ...(options.headers || {}),
       },
     });
@@ -96,9 +98,17 @@ async function api(path, options = {}) {
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      adminSession = null;
+      clearDashboardData();
+      window.dispatchEvent?.(new Event('admin-logout'));
+    }
     const error = new Error(data.error || `Ошибка HTTP ${response.status}`);
     error.status = response.status;
     throw error;
+  }
+  if (requestToken !== adminSession?.token || base !== $('apiUrl').value.trim().replace(/\/$/, '') || (!requestToken && key !== $('adminKey').value.trim())) {
+    throw new Error('Подключение изменилось; загрузите данные повторно.');
   }
   return data;
 }
@@ -185,14 +195,14 @@ function renderMetrics() {
   const summary = dashboard.summary || {};
   const baseRevenue = Number(summary.projected_monthly_revenue || 0);
   const adjustmentsTotal = financeAdjustments.reduce((total, item) => total + Number(item.amount || 0), 0);
-  const finalRevenue = baseRevenue + adjustmentsTotal;
+  const finalRevenue = baseRevenue;
   const adjustmentClass = adjustmentsTotal >= 0 ? 'positive' : 'negative';
   $('metrics').innerHTML = [
-    `<article class="panel metric metric-revenue"><div class="revenue-main"><div class="revenue-value"><span>Доход в месяц</span><strong>${money(finalRevenue)}</strong><div class="revenue-summary"><small>Тарифы: ${money(baseRevenue)}</small><small>·</small><small class="${adjustmentClass}">Корректировки: ${signedMoney(adjustmentsTotal)}</small></div></div><div class="revenue-controls"><button id="addAdjustment" class="finance-button" type="button" title="Добавить доход или расход" aria-label="Добавить доход или расход">+</button><button id="toggleAdjustments" class="finance-button finance-toggle" type="button" title="Показать операции" aria-expanded="${adjustmentsOpen}">${adjustmentsOpen ? '⌃' : '⌄'}</button></div></div><div class="adjustments" ${adjustmentsOpen ? '' : 'hidden'}>${renderAdjustments()}</div></article>`,
+    `<article class="panel metric metric-revenue"><div class="revenue-main"><div class="revenue-value"><span>Ожидаемый MRR</span><strong>${money(finalRevenue)}</strong><div class="revenue-summary"><small>Активные тарифы; PAYMENT: DISABLED</small><small class="${adjustmentClass}">Ручной денежный поток: ${signedMoney(adjustmentsTotal)}</small></div></div><div class="revenue-controls"><button id="addAdjustment" class="finance-button" type="button" title="Добавить доход или расход" aria-label="Добавить доход или расход">+</button><button id="toggleAdjustments" class="finance-button finance-toggle" type="button" title="Показать операции" aria-expanded="${adjustmentsOpen}">${adjustmentsOpen ? '⌃' : '⌄'}</button></div></div><div class="adjustments" ${adjustmentsOpen ? '' : 'hidden'}>${renderAdjustments()}</div></article>`,
     metric('Покупателей', summary.buyer_users_total, 'аккаунтов Buyer App'),
     metric('Магазинов', summary.shops_total, 'аккаунтов Seller App'),
     metric('Товаров', summary.products_total, 'во всех каталогах'),
-    metric('QR использований', summary.qr_scans_total, 'всего транзакций'),
+    metric('QR-сделки', summary.qr_scans_total, 'PAYMENT: DISABLED'),
   ].join('');
   $('addAdjustment').onclick = openAdjustmentDialog;
   $('toggleAdjustments').onclick = () => {
@@ -250,7 +260,7 @@ async function addAdjustment(event) {
 async function removeAdjustment(id) {
   if (!window.confirm('Удалить эту финансовую операцию? Итог будет пересчитан.')) return;
   try {
-    await api(`/admin/finance-adjustments/${id}`, { method: 'DELETE' });
+    await api(`/admin/finance-adjustments/${id}`, { method: 'DELETE', body: JSON.stringify({ confirmed: true, reason: 'Confirmed ledger removal' }) });
     financeAdjustments = financeAdjustments.filter((item) => String(item.id) !== String(id));
     renderMetrics();
   } catch (error) {
@@ -644,7 +654,7 @@ async function addNote() {
 async function removeNote(id) {
   if (!window.confirm('Удалить эту заметку?')) return;
   try {
-    await api(`/admin/notes/${id}`, { method: 'DELETE' });
+    await api(`/admin/notes/${id}`, { method: 'DELETE', body: JSON.stringify({ confirmed: true, reason: 'Confirmed note removal' }) });
     notes = notes.filter((note) => String(note.id) !== String(id));
     renderNotes();
   } catch (error) {

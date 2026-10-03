@@ -8,7 +8,7 @@ let chromium;
 try { ({ chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch (_) { /* Optional browser test runtime. */ }
 
 test('control center browser regression: navigation, private support, actions, XSS and mobile', { skip: !chromium }, async (t) => {
-  const files = new Set(['index.html','styles.css','runtime-config.js','app.js','control_center.js','control_center.css']);
+  const files = new Set(['index.html','styles.css','runtime-config.js','app.js','control_center.js','control_center.css','theme-init.js','theme.css']);
   const server = http.createServer((req, res) => {
     const file = new URL(req.url, 'http://localhost').pathname.slice(1) || 'index.html';
     if (!files.has(file)) return res.writeHead(404).end();
@@ -68,5 +68,20 @@ test('control center browser regression: navigation, private support, actions, X
   await page.setViewportSize({ width: 390, height: 844 }); await page.locator('[data-page-button="support"]').click();
   assert.ok(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth));
   await page.locator('#adminKey').fill('changed-key'); assert.equal(await page.locator('#supportInbox').innerText(), '');
+  await page.emulateMedia({colorScheme:'dark'});
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await page.locator('#adminAppearanceProfile').click();
+  await page.locator('input[name=adminTheme][value=light]').check();
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'light');
+  await page.locator('input[name=adminTheme][value=dark]').check();
+  await page.locator('[data-close-theme]').click();
+  await page.reload();
+  assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
+  assert.equal(await page.evaluate(() => localStorage.getItem('mapmarket.appearance')), 'dark');
+  await page.locator('#adminAppearanceProfile').click();
+  await page.locator('input[name=adminTheme][value=system]').check();
+  await page.emulateMedia({colorScheme:'light'});
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+  await page.locator('[data-close-theme]').click();
   assert.deepEqual(errors, []);
 });
