@@ -68,6 +68,7 @@ function connection() {
 }
 
 async function api(path, options = {}) {
+  const { responseType = 'json', ...requestOptions } = options;
   const { base, key } = connection();
   const requestToken = adminSession?.token;
   const controller = new AbortController();
@@ -76,7 +77,7 @@ async function api(path, options = {}) {
   try {
     const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
     response = await fetch(`${base}${path}`, {
-      ...options,
+      ...requestOptions,
       signal: controller.signal,
       headers: {
         ...(!isFormData ? { 'content-type': 'application/json' } : {}),
@@ -96,7 +97,9 @@ async function api(path, options = {}) {
   } finally {
     clearTimeout(timeout);
   }
-  const data = await response.json().catch(() => ({}));
+  const data = response.ok && responseType === 'blob'
+    ? await response.blob()
+    : await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
       adminSession = null;

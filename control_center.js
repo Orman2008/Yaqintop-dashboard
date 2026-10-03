@@ -123,10 +123,18 @@
     if ($('supportReply')) $('supportReply').value = draft;
     if ($('supportEarlier')) $('supportEarlier').onclick = handle(() => conversation(true));
     for (const image of $('supportConversation').querySelectorAll('[data-support-image]')) {
-      const { base, key } = connection();
-      const response = await fetch(`${base}/admin/support/media/${image.dataset.supportImage}`, { headers: { 'x-admin-key': key }, signal: AbortSignal.timeout(15000) });
-      if (response.ok && id === selectedTicket) { const url = URL.createObjectURL(await response.blob()); objectUrls.push(url); image.src = url; }
-      else image.alt = 'Фото временно недоступно';
+      try {
+        const blob = await guardedApi(`/admin/support/media/${image.dataset.supportImage}`, { responseType: 'blob' });
+        if (id !== selectedTicket || !image.isConnected) continue;
+        const url = URL.createObjectURL(blob); objectUrls.push(url); image.src = url;
+        image.onerror = () => { image.alt = 'Фото временно недоступно'; };
+      } catch (error) {
+        if (error.status === 401 || error.status === 403) throw error;
+        if (id === selectedTicket && image.isConnected) {
+          image.alt = 'Фото временно недоступно';
+          setError(`Не удалось загрузить фото: ${error.message}`);
+        }
+      }
     }
     $('supportConversation').querySelectorAll('[data-retry]').forEach((b) => b.onclick = handle(async () => { await guardedApi(`/admin/support/${id}/retry/${b.dataset.retry}`, { method: 'POST', body: '{}' }); await conversation(); }));
     if ($('supportSend')) $('supportSend').onclick = handle(async () => {
