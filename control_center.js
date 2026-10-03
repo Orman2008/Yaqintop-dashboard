@@ -8,7 +8,7 @@
     s.dataset.page = groupByTitle[s.querySelector('h2')?.textContent] || 'dashboard';
   });
   const nav = document.createElement('nav'); nav.className = 'control-nav';
-  const pages = [['dashboard','Dashboard'],['stores','Stores'],['users','Users'],['products','Products'],['search','Search Intelligence'],['qr','QR Deals'],['moderation','Moderation'],['operations','Operations'],['finance','Finance'],['tasks','Notes'],['audit','Audit Log'],['catalog','Global Catalog'],['support','Support'],['reviews','Reviews / UGC'],['reports','Reports'],['taxonomy','Categories & Brands'],['subscriptions','Subscriptions']];
+  const pages = [['dashboard','Dashboard'],['stores','Stores'],['users','Users'],['products','Products'],['search','Search Intelligence'],['qr','QR Deals'],['moderation','Moderation'],['operations','Operations'],['finance','Finance'],['tasks','Notes'],['audit','Audit Log'],['catalog','Global Catalog'],['support','Support'],['partnerships','Сотрудничество с магазинами'],['reviews','Reviews / UGC'],['reports','Reports'],['taxonomy','Categories & Brands'],['subscriptions','Subscriptions']];
   nav.innerHTML = pages.map(([id, label]) => `<button type="button" data-page-button="${id}">${label}</button>`).join('');
   main.insertBefore(nav, $('error'));
   const panel = (page, html) => {
@@ -20,6 +20,7 @@
   panel('support', `<div class="section-title"><h2>Поддержка @mapmarket_support_bot</h2><button id="supportReload" class="action">Обновить</button></div>
     <div id="supportCounters" class="actions"></div><div class="actions support-filters"><select id="supportStatus"><option value="">Все</option><option>OPEN</option><option>WAITING_ADMIN</option><option>WAITING_USER</option><option>RESOLVED</option></select><select id="supportType"><option value="">Все пользователи</option><option value="buyer">Buyer</option><option value="seller">Seller</option><option value="unknown">Без аккаунта</option></select><input id="supportSearch" placeholder="Номер обращения или имя"><select id="supportCategory"><option value="">Все категории</option>${['account','products','stores','map','qr','plans','app','other'].map((x) => `<option>${x}</option>`).join('')}</select></div>
     <div class="actions"><label>С даты <input id="supportFrom" type="date"></label><label>До даты <input id="supportTo" type="date"></label></div><div class="support-layout"><div id="supportInbox"></div><div id="supportConversation">Выберите обращение</div></div>`);
+  panel('partnerships','<div class="section-title"><h2>Сотрудничество с магазинами</h2><select id="partnershipStatus"><option value="">Все статусы</option>'+['NEW','IN_PROGRESS','CONTACTED','RESOLVED','REJECTED'].map(s=>'<option>'+s+'</option>').join('')+'</select><button id="partnershipReload" class="action">Обновить</button></div><div id="partnershipRows"></div>');
   panel('audit', '<div class="section-title"><h2>Audit Log</h2><input id="auditSearch" placeholder="Действие"><button id="auditReload" class="action">Обновить</button></div><div id="auditRows"></div><button id="auditMore" class="action">Следующие 100</button>');
   panel('operations', '<div class="section-title"><h2>Operations</h2><button id="operationsReload" class="action">Проверить</button></div><div id="operationsData"></div>');
   panel('taxonomy', '<div class="section-title"><h2>Categories & Brands</h2><div class="actions"><button id="addCategory" class="action">Добавить категорию</button><button id="addBrand" class="action">Добавить бренд</button><button id="taxonomyReload" class="action">Обновить</button></div></div><div id="taxonomyData"></div>');
@@ -150,6 +151,21 @@
       await guardedApi(`/admin/support/${id}/close`, { method: 'POST', body: JSON.stringify({ reason, confirmation }) }); await conversation(); await inbox();
     });
   }
+  async function partnerships(){
+    const data=await guardedApi('/admin/partnerships?status='+encodeURIComponent($('partnershipStatus').value));
+    $('partnershipRows').innerHTML=rows(data.items,[['Магазин',p=>'<button class="action" data-partnership="'+p.id+'">'+esc(p.business_name)+'</button>'],['Владелец',p=>esc(p.owner_name)],['Основной код',p=>esc(p.root_store_code)],['Филиалы',p=>esc(p.current_branch_count)],['Тариф',p=>esc(p.current_plan)],['Сообщение',p=>esc(p.message)],['Дата',p=>date(p.created_at)],['Статус',p=>esc(p.status)]]);
+    $('partnershipRows').querySelectorAll('[data-partnership]').forEach(button=>button.onclick=handle(async()=>{
+      const p=data.items.find(p=>String(p.id)===button.dataset.partnership);
+      detail('Сотрудничество #'+p.id,object(p)+'<div class="actions"><button id="partnershipStore" class="action">Магазин / филиалы</button><button id="partnershipOwner" class="action">Владелец</button></div><form id="partnershipForm"><label>Статус<select name="status">'+['NEW','IN_PROGRESS','CONTACTED','RESOLVED','REJECTED'].map(s=>'<option '+(s===p.status?'selected':'')+'>'+s+'</option>').join('')+'</select></label><label>Внутренняя заметка<textarea name="note" maxlength="4000">'+esc(p.internal_note)+'</textarea></label><button class="primary">Сохранить</button></form>');
+      $('partnershipStore').onclick=handle(()=>branchDetail(p.root_shop_id));$('partnershipOwner').onclick=handle(()=>userDetail(p.owner_user_id));
+      $('partnershipForm').onsubmit=async e=>{e.preventDefault();try{const form=e.target;await guardedApi('/admin/partnerships/'+p.id,{method:'PATCH',body:JSON.stringify({status:form.elements.status.value,internal_note:form.elements.note.value})});dialog.close();await partnerships();}catch(error){setError(error.message);}};
+    }));
+  }
+  async function branchDetail(id){
+    const data=await guardedApi('/admin/branches/'+id);
+    detail((data.shop.is_main?'Бизнес / Основной филиал':'ФИЛИАЛ')+' — '+esc(data.shop.business_name),object(data.shop)+'<h3>Филиалы ('+data.branches.length+')</h3>'+rows(data.branches,[['Точка',b=>'<button class="action" data-admin-branch="'+b.id+'">'+esc(b.branch_display_name||b.name)+'</button>'],['Код',b=>esc(b.store_code)],['Тип',b=>b.is_main?'Основной филиал':'ФИЛИАЛ'],['Адрес',b=>esc(b.address)],['Статус',b=>esc(b.branch_status)]])+'<h3>Сотрудники</h3>'+rows(data.staff,[['Имя',s=>esc(s.name)],['Роль',s=>esc(s.role)]])+'<h3>Товары / предложения</h3>'+rows(data.products,[['Название',p=>esc(p.title)],['Цена',p=>money(p.price)],['Остаток',p=>esc(p.stock_quantity)]])+'<h3>Аналитика</h3>'+object(data.analytics)+'<h3>QR activity</h3>'+object(data.qr)+'<h3>История филиалов</h3>'+object(data.history));
+    $('controlDetail').querySelectorAll('[data-admin-branch]').forEach(button=>button.onclick=handle(()=>branchDetail(button.dataset.adminBranch)));
+  }
   async function auditLog() {
     const data = await guardedApi(`/admin/audit?q=${encodeURIComponent($('auditSearch').value)}&offset=${auditOffset}`);
     $('auditRows').innerHTML = rows(data, [['Admin', (a) => esc(a.admin_id || 'legacy')], ['Действие', (a) => esc(a.action)], ['Объект', (a) => `${esc(a.target_type)} #${esc(a.target_id)}`], ['Причина', (a) => esc(a.reason)], ['Дата', (a) => date(a.created_at)]]);
@@ -177,6 +193,7 @@
     page = next;
     main.querySelectorAll('[data-page]').forEach((s) => s.hidden = s.dataset.page !== page);
     nav.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.pageButton === page));
+    if (page === 'partnerships') await partnerships();
     if (page === 'support') { await inbox(); if (selectedTicket) await conversation(); }
     if (page === 'users') await findUsers();
     if (page === 'stores') bindStores();
@@ -193,10 +210,11 @@
     authGeneration++;
     selectedTicket = null; ticketMessages = []; olderBefore = null; replyKey = null; replyText = '';
     objectUrls.splice(0).forEach((url) => URL.revokeObjectURL(url));
-    for (const id of ['supportInbox','supportConversation','supportCounters','controlUsers','controlSummary','auditRows','operationsData','taxonomyData']) $(id).replaceChildren();
+    for (const id of ['partnershipRows','supportInbox','supportConversation','supportCounters','controlUsers','controlSummary','auditRows','operationsData','taxonomyData']) $(id).replaceChildren();
     dialog.close();
   };
-  window.MapMarketControl = { navigate, storeDetail, userDetail, clearPrivateState };
+  window.MapMarketControl = { navigate, storeDetail, userDetail, branchDetail, clearPrivateState };
+  $('partnershipReload').onclick=handle(partnerships);$('partnershipStatus').onchange=handle(partnerships);
   for (const id of ['apiUrl','adminKey']) $(id).addEventListener('input', clearPrivateState);
   function bindReports() {
     $('reports').querySelectorAll('[data-report-detail]').forEach(b => b.onclick=handle(async()=>{
