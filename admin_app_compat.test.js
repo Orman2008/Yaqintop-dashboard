@@ -52,6 +52,7 @@ const createDashboard = (responses) => {
       confirm: () => true,
     },
     document: {
+      addEventListener() {},
     getElementById: (id) => elements[id] || (elements[id] = {
         value: '', textContent: '', innerHTML: '', disabled: false,
         onclick: null, showModal() {}, close() {}, focus() {}, addEventListener() {}, remove() {}, querySelectorAll() {return [];},

@@ -28,6 +28,25 @@ const mediaUrl = (value) => {
   if (!raw) return '';
   try { return new URL(raw, `${connection().base}/`).toString(); } catch { return ''; }
 };
+const adminMediaAttempts = new WeakMap();
+document.addEventListener('load', event => { if(event.target?.tagName === 'IMG') adminMediaAttempts.delete(event.target); }, true);
+document.addEventListener('error', async (event) => {
+  const image = event.target;
+  if (image?.tagName !== 'IMG' || adminMediaAttempts.get(image) === image.src) return;
+  let source;
+  try { source = new URL(image.src); } catch { return; }
+  if (source.origin !== new URL(connection().base).origin || !/^\/media\/\d+(?:\/thumbnail)?$/.test(source.pathname)) return;
+  adminMediaAttempts.set(image, image.src);
+  image.referrerPolicy = 'no-referrer';
+  const session = adminSession?.token;
+  try {
+    const result = await api(source.pathname.replace(/\/thumbnail$/, '') + '/access');
+    if (!image.isConnected || session !== adminSession?.token || !result.url) return;
+    const renewed = new URL(result.url);
+    if (source.pathname.endsWith('/thumbnail')) renewed.pathname += '/thumbnail';
+    adminMediaAttempts.set(image, renewed.toString()); image.src = renewed.toString();
+  } catch { /* Existing image error UI remains. */ }
+}, true);
 const esc = (value) => {
   // Shared by text and quoted attribute templates, so quotes must be encoded too.
   return String(value ?? '').replace(/[&<>"']/g, (character) => ({
