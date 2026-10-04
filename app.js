@@ -44,6 +44,7 @@ function clearDashboardData() {
   moderationReports = [];
   catalogMatches = [];
   globalCatalog = [];
+  $('catalogSubmissionsPanel')?.remove();
   reviews = [];
   reviewTotal = 0;
   reviewsHaveMore = false;
@@ -152,6 +153,7 @@ async function load() {
     catalogMatchesAvailable = catalog.available;
     globalCatalogAvailable = globalCatalogResult.available;
     globalCatalog = Array.isArray(globalCatalogResult.value?.items) ? globalCatalogResult.value.items : [];
+    await reloadCatalogSubmissions();
     reviewsAvailable = reviewResult.available;
     reviews = Array.isArray(reviewResult.value)
       ? reviewResult.value
@@ -528,7 +530,7 @@ async function removeGlobalProduct(id, button) {
   const reason = String(window.prompt('Причина удаления из глобального каталога:') || '').trim();
   if (!reason) return;
   if (reason.length < 3) return setError('Укажите причину длиной не менее 3 символов.');
-  if (!window.confirm(`Удалить товар #${id} из глобального каталога? Товар и фотографии останутся у всех продавцов, которые уже добавили его.`)) return;
+  if (!window.confirm(`Удалить товар #${id} из базы глобального каталога? Текущие товары и фотографии магазинов сохранятся. Найти или добавить эту карточку больше нельзя; новый товар с тем же штрихкодом можно подать снова.`)) return;
   button.disabled = true;
   try {
     await api(`/admin/catalog/products/${id}`, {
@@ -538,6 +540,34 @@ async function removeGlobalProduct(id, button) {
   } catch (error) {
     setError(`Не удалось удалить товар из глобального каталога: ${error.message}`);
   } finally { button.disabled = false; }
+}
+
+async function reloadCatalogSubmissions() {
+  let panel = $('catalogSubmissionsPanel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'catalogSubmissionsPanel';
+    $('globalCatalog').closest('section').querySelector('.table-scroll').before(panel);
+  }
+  try {
+    const result = await api('/admin/catalog/submissions');
+    const items = Array.isArray(result.items) ? result.items : [];
+    panel.innerHTML = `<h3>Новые товары — ожидают одобрения (${items.length})</h3><p>До одобрения товар доступен только в магазине продавца, создавшего его.</p><div class="table-scroll"><table><thead><tr><th>Фото</th><th>Товар / штрихкод</th><th>Магазин</th><th>Действия</th></tr></thead><tbody>${items.map(item => `<tr><td>${mediaUrl(item.canonical_image_url) ? `<img class="catalog-photo" src="${esc(mediaUrl(item.canonical_image_url))}" alt="Фото товара" loading="lazy">` : 'Нет фото'}</td><td><strong>${esc(item.canonical_name)}</strong><br>${esc(item.gtin || item.barcode || 'Без штрихкода')}<br>${esc(item.brand || '')} · ${esc(item.category || '')}</td><td>${esc(item.shop_name)} (#${esc(item.shop_id)})</td><td><div class="catalog-actions"><button class="action approve" data-submission-review="approve:${item.id}">Одобрить товар</button><button class="action warn" data-submission-review="reject:${item.id}">Отклонить</button></div></td></tr>`).join('') || '<tr><td colspan="4">Новых товаров нет</td></tr>'}</tbody></table></div>`;
+    panel.querySelectorAll('[data-submission-review]').forEach(button => {
+      button.onclick = async () => {
+        const [decision,id] = button.dataset.submissionReview.split(':');
+        const reason = decision === 'approve' ? 'Одобрено администратором' : String(window.prompt('Причина отклонения:') || '').trim();
+        if (reason.length < 3) return;
+        if (!window.confirm(decision === 'approve' ? 'Опубликовать товар в глобальном каталоге для всех продавцов?' : 'Отклонить заявку? Товар останется в магазине продавца.')) return;
+        button.disabled = true;
+        try {
+          await api(`/admin/catalog/submissions/${id}/review`, { method: 'POST', body: JSON.stringify({ decision,reason,confirmed:true }) });
+          await reloadGlobalCatalog();
+        } catch (error) { setError(`Не удалось рассмотреть товар: ${error.message}`); }
+        finally { button.disabled = false; }
+      };
+    });
+  } catch (error) { panel.textContent = `Очередь новых товаров недоступна: ${error.message}`; }
 }
 
 function selectImageFile() {
@@ -585,6 +615,7 @@ async function reloadGlobalCatalog() {
   try {
     const result = await api(`/admin/catalog/products?status=${encodeURIComponent(status)}&q=${encodeURIComponent(query)}&limit=200`);
     globalCatalog = Array.isArray(result.items) ? result.items : [];
+    await reloadCatalogSubmissions();
     renderGlobalCatalog();
   } catch (error) {
     setError(`Не удалось загрузить глобальный каталог: ${error.message}`);
