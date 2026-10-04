@@ -29,9 +29,10 @@ const mediaUrl = (value) => {
   try { return new URL(raw, `${connection().base}/`).toString(); } catch { return ''; }
 };
 const esc = (value) => {
-  const div = document.createElement('div');
-  div.textContent = String(value ?? '');
-  return div.innerHTML;
+  // Shared by text and quoted attribute templates, so quotes must be encoded too.
+  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[character]);
 };
 
 function setError(message = '') { $('error').textContent = message; }

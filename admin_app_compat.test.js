@@ -32,6 +32,8 @@ const createDashboard = (responses) => {
     close() {},
     focus() {},
     addEventListener() {},
+    remove() {},
+    querySelectorAll() {return [];},
   }]));
   const context = {
     console,
@@ -52,7 +54,7 @@ const createDashboard = (responses) => {
     document: {
     getElementById: (id) => elements[id] || (elements[id] = {
         value: '', textContent: '', innerHTML: '', disabled: false,
-        onclick: null, showModal() {}, close() {}, focus() {}, addEventListener() {},
+        onclick: null, showModal() {}, close() {}, focus() {}, addEventListener() {}, remove() {}, querySelectorAll() {return [];},
       }),
       querySelectorAll: () => [],
       createElement: () => ({ set textContent(value) { this._text = String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;'); }, get innerHTML() { return this._text || ''; } }),

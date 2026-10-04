@@ -23,12 +23,14 @@ test('control center browser regression: navigation, private support, actions, X
   page.on('pageerror', (e) => errors.push(e.message));
   let status = 'WAITING_ADMIN'; let failed = false;
   const shop = { id: 2, name: 'Real fixture store', plan: 'FREE', city: 'Ташкент', owner_name: 'Owner' };
+  const catalogPayload = '" autofocus onfocus="window.injected=true';
   await page.route('**/admin/**', async (route) => {
     const req = route.request(); const u = new URL(req.url()); const body = req.postDataJSON();
     requests.push({ path: u.pathname, method: req.method(), body, key: req.headers()['x-admin-key'] });
     let data = [];
     if (u.pathname === '/admin/dashboard') data = { summary: {}, shops: [shop], plans: [], cities: [], product_categories: [] };
-    if (u.pathname === '/admin/catalog/products') data = { items: [] };
+    if (u.pathname === '/admin/catalog/products') data = { items: [{ id: 41, canonical_name: catalogPayload, status: 'active', created_at: '2026-10-04', offers_count: 1 }] };
+    if (u.pathname === '/admin/control/catalog/41') data = { product: { canonical_name: catalogPayload, description: 'A & B "quoted" <text> \'single\'', attributes: {} }, offers: [], history: [] };
     if (u.pathname === '/admin/reviews') data = { reviews: [], total_count: 0, has_more: false };
     if (u.pathname === '/admin/control/summary') data = { open_support_tickets: 1, global_products: 2 };
     if (u.pathname === '/admin/control/users') data = [{ id: 1, name: 'Fixture buyer', role: 'buyer' }];
@@ -68,6 +70,16 @@ test('control center browser regression: navigation, private support, actions, X
   await page.locator('.control-dialog[open]').waitFor();
   assert.match(await page.locator('#controlDetail').innerText(), /Real fixture store/); await page.locator('#closeControlDetail').click();
   for (const name of ['catalog','reports','reviews','taxonomy','subscriptions','operations','audit','dashboard']) await page.locator(`[data-page-button="${name}"]`).click();
+  await page.locator('[data-page-button="catalog"]').click();
+  await page.locator('[data-catalog-detail="41"]').click();
+  await page.locator('#catalogEdit_name').waitFor();
+  assert.equal(await page.locator('#catalogEdit_name').getAttribute('onfocus'), null);
+  assert.equal(await page.locator('#catalogEdit_name').getAttribute('autofocus'), null);
+  assert.equal(await page.locator('#catalogEdit_name').inputValue(), catalogPayload);
+  assert.equal(await page.locator('#catalogEdit_description').inputValue(), 'A & B "quoted" <text> \'single\'');
+  await page.locator('#catalogEdit_name').focus();
+  assert.equal(await page.evaluate(() => window.injected), undefined);
+  await page.locator('#closeControlDetail').click();
   await page.locator('[data-page-button="partnerships"]').click();
   await page.locator('[data-partnership="5"]').click();
   assert.match(await page.locator('#controlDetail').innerText(), /Нужны 20 филиалов/);
