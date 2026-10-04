@@ -96,7 +96,7 @@
         operations:[['Тип / ID',x=>escape(x.type)+' / '+escape(x.id)],['Статус',x=>escape(x.status)+(x.stuck?' · STUCK':'')],['Ошибка',x=>escape(x.error)],['Attempts',x=>fmt(x.attempts)],['Создан / updated',x=>when(x.created_at)+' / '+when(x.updated_at)],['Действие',x=>x.status==='failed'&&['media','pos','analytics'].includes(x.type)?`<button class="action" data-retry="${escape(x.type+':'+x.id)}">Retry</button>`:x.type==='push'?'Повтор требует защиты от дубликатов':'—']]
       };
       $('opsRows').innerHTML=table(rowsData,columns[page]);
-      $('opsNotice').textContent=page==='qr'?'PAYMENT: DISABLED / TEST MODE — SUCCESS означает завершение MapMarket QR flow.':page==='search'?'Исторические поиски без results_count не считаются zero results. Количество результатов — размер возвращённой страницы.':page==='finance'?'Collected subscription revenue: PAYMENT DISABLED. Валюты не складываются; balance — сумма записей журнала.':'';
+      $('opsNotice').textContent=page==='qr'?'PAYMENT: DISABLED / TEST MODE — SUCCESS означает завершение Yaqintop market QR flow.':page==='search'?'Исторические поиски без results_count не считаются zero results. Количество результатов — размер возвращённой страницы.':page==='finance'?'Collected subscription revenue: PAYMENT DISABLED. Валюты не складываются; balance — сумма записей журнала.':'';
       if(page==='operations'){
         $('opsStats').innerHTML=Object.entries(data.health).map(([k,v])=>`<article class="metric"><span>${escape(k)}</span><strong>${escape(v)}</strong></article>`).join('');
         $('opsNotice').textContent='UNKNOWN: provider не проверен. Push retry запрещён без защиты от повторной доставки. AI jobs выполняются синхронно, постоянной очереди нет.';
