@@ -282,7 +282,7 @@ function renderShops(rows) {
   const query = ($('search').value || '').trim().toLowerCase();
   const plan = $('planFilter').value;
   const status = $('statusFilter').value;
-  const list = rows.filter((row) => {
+  const list = rows.filter((row) => !row.root_shop_id).filter((row) => {
     const matchesQuery = `${row.name} ${row.city || ''} ${row.address || ''} ${row.plan || ''} ${row.owner_name || ''} ${row.owner_phone || ''}`.toLowerCase().includes(query);
     const matchesPlan = !plan || String(row.plan || 'FREE').toUpperCase().replaceAll(' ', '_') === plan;
     const matchesStatus = !status || row.moderation_status === status || row.verification_status === status;
@@ -294,7 +294,9 @@ function renderShops(rows) {
       const mapLink = hasCoordinates ? `<br><a href="https://www.openstreetmap.org/?mlat=${encodeURIComponent(row.latitude)}&mlon=${encodeURIComponent(row.longitude)}#map=17/${encodeURIComponent(row.latitude)}/${encodeURIComponent(row.longitude)}" target="_blank" rel="noopener">${esc(row.latitude)}, ${esc(row.longitude)} ↗</a>` : '<br><small>Координаты не указаны</small>';
       const activity = row.last_activity_at ? new Date(row.last_activity_at).toLocaleString('ru-RU') : 'Нет активности';
       const subscription = row.plan_expires_at ? `до ${new Date(row.plan_expires_at).toLocaleDateString('ru-RU')}` : 'без даты окончания';
-      return `<tr><td><strong>${esc(row.name)}</strong><br><small>${esc(row.owner_name || '')} · ${esc(row.owner_phone || row.phone || '')}</small></td><td><strong>${esc(row.city || 'Не указан')}</strong><br><small>${esc(row.address || '')}</small>${mapLink}</td><td><button class="badge plan-action" type="button" data-grant-plan="${row.id}" title="Выдать бесплатный тариф на месяц">${labels[row.plan] || esc(row.plan)}</button><br><small>${subscription}</small></td><td>${row.product_count}</td><td>${row.qr_scans_count}</td><td><small>Просмотры: ${row.views_count}<br>Клики: ${row.clicks_count}<br>Звонки: ${row.calls_count}<br>Маршруты: ${row.route_clicks_count}<br>Последняя: ${activity}</small></td><td><span class="${row.verification_status === 'verified' ? 'status-ok' : row.verification_status === 'rejected' ? 'status-bad' : ''}">${esc(row.verification_status || 'unverified')}</span><br><small>${esc(row.moderation_status || 'active')}</small></td><td><div class="actions"><button class="action approve" data-shop-approve="${row.id}">Проверен</button><button class="action warn" data-shop-reject="${row.id}">Отклонить</button><button class="danger" data-shop-block="${row.id}">${row.moderation_status === 'blocked' ? 'Разблокировать' : 'Блокировать'}</button></div></td></tr>`;
+      const branches=Array.isArray(row.branches)?row.branches:[];
+      const tree=branches.length>1?`<details><summary>Филиалы: ${branches.length} ▾</summary>${branches.map(b=>`<p><button class="action" data-business-branch="${b.id}">${esc(b.is_main?'Основной филиал':b.name)}</button><br><small>${esc(b.code)} · ${esc(b.address)} · ${esc(b.status)}</small></p>`).join('')}</details>`:`<small>${esc(row.store_code||'')}</small>`;
+      return `<tr><td><strong>${esc(row.name)}</strong><br><small>${esc(row.owner_name || '')} · ${esc(row.owner_phone || row.phone || '')}</small>${tree}</td><td><strong>${esc(row.city || 'Не указан')}</strong><br><small>${esc(row.address || '')}</small>${mapLink}</td><td><button class="badge plan-action" type="button" data-grant-plan="${row.id}" title="Выдать бизнесу бесплатный тариф на месяц">${labels[row.plan] || esc(row.plan)}</button><br><small>${subscription}<br>Общий AI-кошелёк: ${esc(row.ai_credits_remaining??'—')}</small></td><td>${row.product_count}</td><td>${row.qr_scans_count}</td><td><small>Просмотры: ${row.views_count}<br>Клики: ${row.clicks_count}<br>Звонки: ${row.calls_count}<br>Маршруты: ${row.route_clicks_count}<br>Последняя: ${activity}</small></td><td><span class="${row.verification_status === 'verified' ? 'status-ok' : row.verification_status === 'rejected' ? 'status-bad' : ''}">${esc(row.verification_status || 'unverified')}</span><br><small>${esc(row.moderation_status || 'active')}</small></td><td><div class="actions"><button class="action approve" data-shop-approve="${row.id}">Проверен</button><button class="action warn" data-shop-reject="${row.id}">Отклонить</button><button class="danger" data-shop-block="${row.id}">${row.moderation_status === 'blocked' ? 'Разблокировать' : 'Блокировать'}</button></div></td></tr>`;
     }).join('')
     : '<tr><td colspan="8" class="empty">Магазины не найдены</td></tr>';
   document.querySelectorAll('[data-shop-approve]').forEach((button) => { button.onclick = () => moderateShop(button.dataset.shopApprove, 'active', 'verified'); });
@@ -306,6 +308,7 @@ function renderShops(rows) {
   document.querySelectorAll('[data-grant-plan]').forEach((button) => {
     button.onclick = () => openFreeSubscriptionDialog(button.dataset.grantPlan);
   });
+  document.querySelectorAll('[data-business-branch]').forEach(button=>button.onclick=async()=>{try{await window.MapMarketControl.branchDetail(button.dataset.businessBranch);}catch(error){setError(error.message);}});
 }
 
 function renderReviews() {
@@ -497,6 +500,15 @@ function renderGlobalCatalog() {
   document.querySelectorAll('[data-global-merge]').forEach((button) => {
     button.onclick = () => mergeGlobalProduct(button.dataset.globalMerge);
   });
+  target.querySelectorAll('.catalog-actions').forEach((actions, index) => {
+    const item = rows[index];
+    if (item.status !== 'active') return;
+    const button = document.createElement('button');
+    button.className = 'action warn';
+    button.textContent = 'Удалить товар из глобального каталога';
+    button.onclick = () => removeGlobalProduct(item.id, button);
+    actions.append(button);
+  });
   document.querySelectorAll('[data-photo-replace-original]').forEach((button) => {
     button.onclick = () => replaceGlobalProductPhoto(button.dataset.photoReplaceOriginal, 'original');
   });
@@ -510,6 +522,22 @@ function renderGlobalCatalog() {
     const [action, id] = button.dataset.photoAction.split(':');
     button.onclick = () => globalProductPhotoAction(id, action);
   });
+}
+
+async function removeGlobalProduct(id, button) {
+  const reason = String(window.prompt('Причина удаления из глобального каталога:') || '').trim();
+  if (!reason) return;
+  if (reason.length < 3) return setError('Укажите причину длиной не менее 3 символов.');
+  if (!window.confirm(`Удалить товар #${id} из глобального каталога? Товар и фотографии останутся у всех продавцов, которые уже добавили его.`)) return;
+  button.disabled = true;
+  try {
+    await api(`/admin/catalog/products/${id}`, {
+      method: 'DELETE', body: JSON.stringify({ reason, confirmed: true }),
+    });
+    await reloadGlobalCatalog();
+  } catch (error) {
+    setError(`Не удалось удалить товар из глобального каталога: ${error.message}`);
+  } finally { button.disabled = false; }
 }
 
 function selectImageFile() {

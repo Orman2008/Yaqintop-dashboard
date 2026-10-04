@@ -1,0 +1,27 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const {createFixture}=require('../MapMarket/backend/admin_operations.test');
+const {createBranchSystem,registerBranchRoutes}=require('../MapMarket/backend/branch_system');
+test('Admin business tree on actual PostgreSQL routes has one payer and four expandable branches',{timeout:90000},async t=>{
+  const f=await createFixture();t.after(()=>f.close());
+  await f.pool.query("UPDATE shops SET store_code='MP-EIDNS3',ai_plan_credits_remaining=500,ai_bonus_credits_remaining=0,ai_purchased_credits_remaining=0,ai_credits_remaining=500 WHERE id=1");
+  const system=createBranchSystem({pool:f.pool,isValidCoordinates:()=>true,detectShopCity:()=> 'Tashkent'});
+  for(let i=1;i<=3;i++)await system.create(1,1,{name:'Branch '+i,address:'Chilanzar '+i,latitude:41.3,longitude:69.2});
+  registerBranchRoutes({app:f.app,pool:f.pool,system,requireAuth:(_q,res)=>res.sendStatus(401),requireAdmin:f.app._router.stack.find(l=>l.route?.path==='/admin/ops/config').route.stack[0].handle});
+  const browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'chrome',headless:true});t.after(()=>browser.close());
+  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(f.base);await page.locator('#apiUrl').fill(f.base);await page.locator('#adminKey').fill('fixture-admin-key-0000000000000000000');await page.locator('#load').click();
+  await page.locator('[data-page-button="stores"]').click();await page.locator('#opsRows [data-store="1"]').waitFor();
+  assert.equal(await page.locator('#opsRows tbody > tr').count(),1);
+  assert.equal(await page.locator('#opsRows [data-admin-branch]').count(),4);
+  assert.equal(await page.locator('#opsRows details').count(),1);
+  await page.locator('#opsRows summary').click();assert.equal(await page.locator('#opsRows details').getAttribute('open'),'');
+  assert.match(await page.locator('#opsRows').innerText(),/500/);assert.match(await page.locator('#opsRows').innerText(),/BUSINESS PLUS/);
+  await page.locator('#opsRows summary').click();assert.equal(await page.locator('#opsRows details').getAttribute('open'),null);
+  await page.locator('#opsRows summary').click();await page.locator('#opsRows [data-admin-branch]').nth(1).click();
+  await page.getByRole('heading',{name:/Общий AI-кошелёк бизнеса/}).waitFor();
+  assert.match(await page.locator('#controlDetail').innerText(),/500 AI credits/);
+  assert.match(await page.locator('#controlDetail').innerText(),/Тариф бизнеса — наследуется филиалами/);
+  assert.deepEqual(errors,[]);
+});

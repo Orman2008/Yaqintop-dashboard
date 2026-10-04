@@ -5,6 +5,6 @@
   "scripts": {
     "build": "node build.js",
     "check": "node --check app.js && node --check control_center.js && node --check operations_center.js",
-    "test": "node --test admin_app_compat.test.js control_center.browser.test.js"
+    "test": "node --test --test-concurrency=1 admin_app_compat.test.js control_center.browser.test.js business_tree.browser.test.js"
   }
 }
