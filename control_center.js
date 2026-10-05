@@ -201,6 +201,7 @@
     if (page === 'stores') bindStores();
     if (page === 'dashboard') await summary();
     if (page === 'audit') await auditLog();
+    if (page === 'compliance') await window.YaqintopCompliance.refresh();
     if (page === 'operations') await operations();
     if (page === 'taxonomy') await loadTaxonomy();
     if (page === 'subscriptions') {

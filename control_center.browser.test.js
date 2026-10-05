@@ -8,7 +8,7 @@ let chromium;
 try { ({ chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch (_) { /* Optional browser test runtime. */ }
 
 test('control center browser regression: navigation, private support, actions, XSS and mobile', { skip: !chromium }, async (t) => {
-  const files = new Set(['index.html','styles.css','runtime-config.js','app.js','control_center.js','control_center.css','theme-init.js','theme.css']);
+  const files = new Set(['index.html','styles.css','runtime-config.js','app.js','control_center.js','compliance_center.js','control_center.css','theme-init.js','theme.css']);
   const server = http.createServer((req, res) => {
     const file = new URL(req.url, 'http://localhost').pathname.slice(1) || 'index.html';
     if (!files.has(file)) return res.writeHead(404).end();
@@ -22,6 +22,7 @@ test('control center browser regression: navigation, private support, actions, X
   const page = await browser.newPage(); const errors = []; const requests = [];
   page.on('pageerror', (e) => errors.push(e.message));
   let status = 'WAITING_ADMIN'; let failed = false;
+  let verification='pending';
   const shop = { id: 2, name: 'Real fixture store', plan: 'FREE', city: 'Ташкент', owner_name: 'Owner' };
   const catalogPayload = '" autofocus onfocus="window.injected=true';
   await page.route('**/admin/**', async (route) => {
@@ -29,6 +30,11 @@ test('control center browser regression: navigation, private support, actions, X
     requests.push({ path: u.pathname, method: req.method(), body, key: req.headers()['x-admin-key'] });
     let data = [];
     if (u.pathname === '/admin/dashboard') data = { summary: {}, shops: [shop], plans: [], cities: [], product_categories: [] };
+    if (u.pathname === '/admin/compliance/sellers/1/decision'){verification=body.verification_status;data={verification_status:verification};}
+    if (u.pathname === '/admin/compliance/sellers') data={sellers:[{id:1,legal_name:'Synthetic legal company',seller_type:'legal_entity',tax_id:'123456789',verification_status:verification,shops:[{id:2,name:'Synthetic branch'}],submitted_at:'2026-10-05T12:00:00Z'}]};
+    if (u.pathname === '/admin/compliance/licenses') data={licenses:[]};
+    if (u.pathname === '/admin/compliance/license-requirements') data={categories:[]};
+    if (u.pathname === '/admin/compliance/audit') data={events:[{actor_type:'admin',actor_id:'synthetic',action:'seller_verification_verified',entity_type:'legal_seller',entity_id:'1',created_at:'2026-10-05T12:00:00Z',metadata:{status:'verified'}}]};
     if (u.pathname === '/admin/catalog/products') data = { items: [{ id: 41, canonical_name: catalogPayload, status: 'active', created_at: '2026-10-04', offers_count: 1 }] };
     if (u.pathname === '/admin/control/catalog/41') data = { product: { canonical_name: catalogPayload, description: 'A & B "quoted" <text> \'single\'', attributes: {} }, offers: [], history: [] };
     if (u.pathname === '/admin/reviews') data = { reviews: [], total_count: 0, has_more: false };
@@ -106,5 +112,13 @@ test('control center browser regression: navigation, private support, actions, X
   await page.emulateMedia({colorScheme:'light'});
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light');
   await page.locator('[data-close-theme]').click();
+  assert.equal(await page.locator('#complianceSellers').innerText(),'');
+  await page.locator('#apiUrl').fill(`http://127.0.0.1:${server.address().port}`);
+  await page.locator('#adminKey').fill('fixture-admin-key');await page.locator('#load').click();
+  await page.locator('[data-page-button="compliance"]').click();await page.locator('[data-compliance-decision="seller:1:verified"]').waitFor();
+  await page.locator('[data-compliance-decision="seller:1:verified"]').click();await page.waitForFunction(()=>document.querySelector('#complianceSellers')?.textContent.includes('Подтверждено'));
+  assert.equal(requests.find(r=>r.path==='/admin/compliance/sellers/1/decision').body.verification_status,'verified');
+  await page.locator('#complianceAuditFilters [name=action]').fill('seller_verification_verified');await page.locator('#complianceAuditFilters button').click();
+  await page.screenshot({path:'../diagnostics/p1-admin-compliance.png',fullPage:true});
   assert.deepEqual(errors, []);
 });
