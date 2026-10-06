@@ -8,7 +8,7 @@ let chromium;
 try { ({ chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright')); } catch (_) { /* Optional browser test runtime. */ }
 
 test('control center browser regression: navigation, private support, actions, XSS and mobile', { skip: !chromium }, async (t) => {
-  const files = new Set(['index.html','styles.css','runtime-config.js','app.js','control_center.js','compliance_center.js','control_center.css','theme-init.js','theme.css']);
+  const files = new Set(['index.html','styles.css','runtime-config.js','app.js','control_center.js','compliance_center.js','pos_center.js','control_center.css','theme-init.js','theme.css']);
   const server = http.createServer((req, res) => {
     const file = new URL(req.url, 'http://localhost').pathname.slice(1) || 'index.html';
     if (!files.has(file)) return res.writeHead(404).end();
@@ -35,6 +35,10 @@ test('control center browser regression: navigation, private support, actions, X
     if (u.pathname === '/admin/compliance/licenses') data={licenses:[]};
     if (u.pathname === '/admin/compliance/license-requirements') data={categories:[]};
     if (u.pathname === '/admin/compliance/audit') data={events:[{actor_type:'admin',actor_id:'synthetic',action:'seller_verification_verified',entity_type:'legal_seller',entity_id:'1',created_at:'2026-10-05T12:00:00Z',metadata:{status:'verified'}}]};
+    if (u.pathname === '/admin/pos/connections') data={connections:[{id:31,provider:'universal_pos',shop_name:'Synthetic POS shop',branch_id:2,status:'configuring',records_processed:2,matched:1,unmatched:1,conflicts:1,records_rejected:1}]};
+    if (u.pathname === '/admin/pos/connections/31/mappings') data={items:[{external_product_id:'<img src=x onerror="window.injected=true">',external_location_id:'A',status:'CONFLICT',confidence:0}]};
+    if (u.pathname === '/admin/pos/connections/31/errors') data={items:[{code:'invalid_stock',record_index:1}]};
+    if (u.pathname === '/admin/pos/connections/31/history') data={items:[{id:'synthetic',mode:'full',status:'partial',records_processed:2,records_rejected:1}]};
     if (u.pathname === '/admin/catalog/products') data = { items: [{ id: 41, canonical_name: catalogPayload, status: 'active', created_at: '2026-10-04', offers_count: 1 }] };
     if (u.pathname === '/admin/control/catalog/41') data = { product: { canonical_name: catalogPayload, description: 'A & B "quoted" <text> \'single\'', attributes: {} }, offers: [], history: [] };
     if (u.pathname === '/admin/reviews') data = { reviews: [], total_count: 0, has_more: false };
@@ -120,5 +124,13 @@ test('control center browser regression: navigation, private support, actions, X
   assert.equal(requests.find(r=>r.path==='/admin/compliance/sellers/1/decision').body.verification_status,'verified');
   await page.locator('#complianceAuditFilters [name=action]').fill('seller_verification_verified');await page.locator('#complianceAuditFilters button').click();
   await page.screenshot({path:'../diagnostics/p1-admin-compliance.png',fullPage:true});
+  await page.locator('[data-page-button="pos"]').click();await page.locator('#posConnections').getByText('Synthetic POS shop',{exact:true}).waitFor();
+  await page.locator('#posConnections button').click();await page.locator('#posDetails').getByText('CONFLICT',{exact:true}).waitFor();
+  assert.match(await page.locator('#posDetails').innerText(),/invalid_stock/);
+  assert.equal(await page.evaluate(()=>window.injected),undefined);
+  assert.equal(await page.locator('#posDetails img').count(),0);
+  assert.ok(await page.evaluate(()=>document.body.scrollWidth<=innerWidth));
+  await page.screenshot({path:'../diagnostics/p2-pos-admin-390.png',fullPage:true});
+  await page.locator('#adminKey').fill('changed-key');assert.equal(await page.locator('#posDetails').innerText(),'');
   assert.deepEqual(errors, []);
 });

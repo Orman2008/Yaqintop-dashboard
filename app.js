@@ -330,7 +330,7 @@ function renderShops(rows) {
   document.querySelectorAll('[data-grant-plan]').forEach((button) => {
     button.onclick = () => openFreeSubscriptionDialog(button.dataset.grantPlan);
   });
-  document.querySelectorAll('[data-business-branch]').forEach(button=>button.onclick=async()=>{try{await window.MapMarketControl.branchDetail(button.dataset.businessBranch);}catch(error){setError(error.message);}});
+  document.querySelectorAll('[data-business-branch]').forEach(button=>button.onclick=async()=>{try{await window.YaqintopControl.branchDetail(button.dataset.businessBranch);}catch(error){setError(error.message);}});
 }
 
 function renderReviews() {

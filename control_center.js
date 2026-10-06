@@ -217,7 +217,7 @@
     for (const id of ['partnershipRows','supportInbox','supportConversation','supportCounters','controlUsers','controlSummary','auditRows','operationsData','taxonomyData']) $(id).replaceChildren();
     dialog.close();
   };
-  window.MapMarketControl = { navigate, storeDetail, userDetail, branchDetail, clearPrivateState };
+  window.YaqintopControl = { navigate, storeDetail, userDetail, branchDetail, clearPrivateState };
   $('partnershipReload').onclick=handle(partnerships);$('partnershipStatus').onchange=handle(partnerships);
   for (const id of ['apiUrl','adminKey']) $(id).addEventListener('input', clearPrivateState);
   function bindReports() {

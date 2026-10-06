@@ -13,6 +13,6 @@
    $('posDetails').innerHTML='<h3>Product mappings</h3>'+table(m.items,[['External product','external_product_id'],['Variant','external_variant_id'],['Location','external_location_id'],['Status','status'],['Confidence','confidence'],['Global product','master_product_id']])+'<h3>Ошибки</h3>'+table(e.items,[['Run','run_id'],['Record','record_index'],['Code','code']])+'<h3>Sync history</h3>'+table(h.items,[['Run','id'],['Mode','mode'],['Status','status'],['Processed','records_processed'],['Rejected','records_rejected']]);
   });$('posConnections').append(button);});
  }
- window.YaqintopPos={refresh};link.onclick=run(()=>window.MapMarketControl.navigate('pos'));$('posReload').onclick=run(refresh);
+ window.YaqintopPos={refresh};link.onclick=run(()=>window.YaqintopControl.navigate('pos'));$('posReload').onclick=run(refresh);
  const clear=()=>{ $('posConnections').replaceChildren();$('posDetails').replaceChildren();$('posError').textContent='';};window.addEventListener('admin-logout',clear);for(const id of ['apiUrl','adminKey'])$(id).addEventListener('input',clear);
 })();

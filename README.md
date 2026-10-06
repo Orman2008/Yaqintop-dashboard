@@ -1,10 +1,10 @@
-# MapMarket Admin Panel
+# YAQINTOP Admin Panel
 
-Операционный центр MapMarket на реальных данных backend и PostgreSQL: Dashboard, Stores, Users, Products, Search Intelligence, QR Deals, Moderation, Operations, Finance, Notes и Audit Log.
+Операционный центр YAQINTOP на реальных данных backend и PostgreSQL: Dashboard, Stores, Users, Products, Search Intelligence, QR Deals, Moderation, Operations, Finance, Notes и Audit Log.
 
 ## Запуск
 
-1. Запустите backend MapMarket из `C:\Users\User\Desktop\MapMarket\MapMarket\backend` с настроенными `DATABASE_URL` и `ADMIN_API_KEY`:
+1. Запустите backend YAQINTOP из `C:\Users\User\Desktop\MapMarket\MapMarket\backend` с настроенными `DATABASE_URL` и `ADMIN_API_KEY`:
 
    ```powershell
    $env:ADMIN_API_KEY = 'ваш-длинный-ключ-минимум-32-символа'
